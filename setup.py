@@ -14,7 +14,9 @@ settings = {
     'description': "The Squall is the nano-framework that"
                    " implements cooperative event-driven"
                    " concurrency and asynchronous networking.",
+    'install_requires': []
 }
 
+settings['install_requires'].append('tornado>=4.3')
 
 setup(**settings)
