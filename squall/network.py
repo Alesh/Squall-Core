@@ -6,7 +6,6 @@ import errno
 import socket
 import logging
 from time import time as now
-from functools import partial
 from collections import deque
 
 from tornado import gen
@@ -112,7 +111,8 @@ class SocketStream(object):
         done = self._task()
         if done:
             self._task = None
-            done()
+            callable, arg = done
+            callable(arg)
 
     async def read_bytes(self, number, *, timeout=None):
         """ Asynchronously reads a number of bytes.
@@ -128,11 +128,11 @@ class SocketStream(object):
         def _check_done():
             if self._exc is not None:
                 exc, self._exc = self._exc, None
-                return partial(future.set_exception, exc)
+                return future.set_exception, exc
             elif len(self._inbuff) >= number:
                 data = self._inbuff[:number]
                 self._inbuff = self._inbuff[number:]
-                return partial(future.set_result, data)
+                return future.set_result, data
             return None
 
         def _read_bytes():
@@ -144,6 +144,11 @@ class SocketStream(object):
             else:
                 return future
 
+        done = _check_done()
+        if done:
+            self._task = None
+            _, result = done
+            return result
         try:
             return await _read_bytes()
         except gen.TimeoutError:
@@ -169,18 +174,18 @@ class SocketStream(object):
         def _check_done():
             if self._exc is not None:
                 exc, self._exc = self._exc, None
-                return partial(future.set_exception, exc)
+                return future.set_exception, exc
             else:
                 pos = self._inbuff.find(delimiter)
                 if pos >= 0:
                     pos += len(delimiter)
                     data = self._inbuff[:pos]
                     self._inbuff = self._inbuff[pos:]
-                    return partial(future.set_result, data)
+                    return future.set_result, data
                 elif len(self._inbuff) >= max_bytes:
                     data = self._inbuff[:max_bytes]
                     self._inbuff = self._inbuff[max_bytes:]
-                    return partial(future.set_result, data)
+                    return future.set_result, data
             return None
 
         def _read_until():
@@ -192,6 +197,11 @@ class SocketStream(object):
             else:
                 return future
 
+        done = _check_done()
+        if done:
+            self._task = None
+            _, result = done
+            return result
         try:
             return await _read_until()
         except gen.TimeoutError:
@@ -216,10 +226,10 @@ class SocketStream(object):
         def _check_done():
             if self._exc is not None:
                 exc, self._exc = self._exc, None
-                return partial(future.set_exception, exc)
+                return future.set_exception, exc
             else:
                 if len(self._outbuff) == 0:
-                    return partial(future.set_result, None)
+                    return future.set_result, None
             return None
 
         def _write():
@@ -231,6 +241,11 @@ class SocketStream(object):
             else:
                 return future
 
+        done = _check_done()
+        if done:
+            self._task = None
+            _, result = done
+            return result
         try:
             return await _write()
         except gen.TimeoutError:
@@ -256,7 +271,7 @@ class SocketAcceptor(object):
     """ Asynchronous socket connection acceptor.
     """
 
-    def __init__(self, sockets, *, stream_factory=None):
+    def __init__(self, sockets, stream_factory=None):
         self._sockets = sockets
         self._listeners = deque()
         self.stream_factory = (stream_factory or
@@ -280,13 +295,17 @@ class SocketAcceptor(object):
             fd = listen_socket.fileno()
             while True:
                 await ready(fd, READ)
-                while True:
+                repeat = 64
+                while repeat:
+                    repeat -= 1
                     try:
                         connection = listen_socket.accept()
                         connections[connection] = spawn(_serve, connection)
                     except IOError as exc:
                         if exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
                             break
+                        elif exc.errno == errno.ECONNABORTED:
+                            continue
                         raise exc
 
         finally:
