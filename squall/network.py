@@ -311,8 +311,10 @@ class SocketAcceptor(object):
         finally:
             logging.info("Finished listener on {}"
                          "".format(listen_socket.getsockname()))
-            listen_socket.shutdown(socket.SHUT_RDWR)
-            listen_socket.close()
+            try:
+                listen_socket.shutdown(socket.SHUT_RDWR)
+            finally:
+                listen_socket.close()
 
     async def handle_connection(self, stream, address):
         """ Handles a new incoming connection.
@@ -324,7 +326,7 @@ class SocketAcceptor(object):
         for socket_ in self._sockets:
             self._listeners.append(spawn(self._listener, socket_))
 
-    def cloase(self):
+    def close(self):
         """ Closes listener.
         """
         while self._listeners:

@@ -1,11 +1,8 @@
 """ Application gateways
 """
 import sys
-import logging
 import traceback
 from http.server import BaseHTTPRequestHandler
-
-from squall.network import SocketStream, SocketAcceptor, timeout_gen
 
 
 def Status(code):
@@ -53,23 +50,20 @@ class StartResponse(object):
         await self.stream.write(data, timeout=timeout, flush=flush)
 
 
-class SCGIGateway(object):
+class SAGIGateway(object):
 
-    """ SCGI Gateway
+    """ Squall asynchronous gateway interface.
     """
 
     def __init__(self, app, *,
                  timeout=None, chunk_size=8192, buffer_size=262144):
         self.app = app
-        self.timeout = timeout
-        self.chunk_size = chunk_size
-        self.buffer_size = buffer_size
 
-    async def handle_request(self, environ, stream):
-        temp = environ.pop('SCGI', '1')
+    async def __call__(self, environ, stream):
+        temp = environ.pop('SCGI', '1') + ".0"
         environ['scgi.version'] = tuple(map(int, temp.split(".")[:2]))
-        environ['scgi.read_bytes'] = stream.read_bytes
-        environ['scgi.read_until'] = stream.read_until
+        environ['async.read_bytes'] = stream.read_bytes
+        environ['async.read_until'] = stream.read_until
         start_response = StartResponse(stream, environ['SERVER_PROTOCOL'])
         try:
             await self.app(environ, start_response)
@@ -85,44 +79,3 @@ class SCGIGateway(object):
                 await write(line.encode('UTF-8'))
         finally:
             await start_response.write(flush=True)
-
-
-class SCGIAcceptor(SocketAcceptor):
-
-    """ SCGI Backend
-    """
-
-    def __init__(self, gateway, sockets):
-        def stream_factory(socket_):
-            return SocketStream(socket_,
-                                gateway.chunk_size,
-                                gateway.buffer_size)
-        super(SCGIAcceptor, self).__init__(sockets, stream_factory)
-        self.timeout = gateway.timeout
-        self.gateway = gateway
-
-    async def handle_connection(self, stream, address):
-        """ Connection handler
-        """
-        try:
-            timeout = timeout_gen(self.timeout)
-            data = await stream.read_until(b':',
-                                           timeout=next(timeout),
-                                           max_bytes=16)
-            if data[-1] != ord(b':'):
-                raise ValueError("Wrong header size")
-            data = await stream.read_bytes(int(data[:-1]) + 1,
-                                           timeout=next(timeout))
-            if data[-1] != ord(b','):
-                raise ValueError("Wrong header format")
-            items = data.decode('UTF8').split('\000')
-            environ = dict(zip(items[::2], items[1::2]))
-            try:
-                await self.gateway.handle_request(environ, stream)
-            except:
-                logging.error("Cannon handle request")
-        except Exception as exc:
-            logging.info("Cannon handle connection {}: {}"
-                         "".format(address, exc))
-        finally:
-            stream.close()

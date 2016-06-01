@@ -1,6 +1,6 @@
+~*
 .env
 .st3
--*.py
 build
 *.egg-info
 __pycache__
