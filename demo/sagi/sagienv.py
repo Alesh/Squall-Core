@@ -10,10 +10,10 @@ HTML = """
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Simple async SCGI application</title>
+    <title>Simple ASGI application</title>
 </head>
 <body>
-  <h3>SCGI environ</h3>
+  <h3>ASGI environ</h3>
   <table>
     <tr><th>Name</th><th>Value</th></tr>
     ----- >8 -----
@@ -39,7 +39,7 @@ class SAGIServer(SCGIBackend):
         rows = [(k, html.escape(str(v))) for k, v in environ.items()]
         write = start_response('200 OK', [('Content-Type', 'text/html')])
         await write(header.encode('UTF-8'))
-        for row in rows:
+        for row in sorted(rows, key=lambda item: item[0]):
             await write("<tr><td>{}</th><td>{}</td></tr>"
                         "\n".format(*row).encode('UTF-8'))
         await write(footer.encode('UTF-8'))

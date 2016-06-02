@@ -1,12 +1,11 @@
 """ Application gateways
 """
-import io
 import sys
 import logging
 import traceback
 from http.server import BaseHTTPRequestHandler
 
-from squall.network import timeout_gen
+logger = logging.getLogger(__name__)
 
 
 def Status(code):
@@ -16,9 +15,56 @@ def Status(code):
     return "{} {}".format(code, status)
 
 
+class ErrorStream(object):
+
+    """ Request error stream
+    """
+    def __init__(self, environ, obj):
+        self.source = obj.__class__.__name__
+        self.extra = {'ip': environ.get('REMOTE_ADDR', 'UNKNOWN')}
+
+    def write(self, line):
+        """ Writes one line error message.
+        """
+        logging.error('%s: %s', self.source, line, extra=self.extra)
+
+    def writelines(self, lines):
+        """ Writes multi line error message.
+        """
+        for line in lines:
+            self.write(line)
+
+    def flush():
+        """ Flushes log.
+        """
+        for handler in logger.handlers:
+            handler.flush()
+
+
+class InputStream(object):
+
+    """ Input stream
+    """
+
+    def __init__(self, environ, stream):
+        self._stream = stream
+
+    async def read_bytes(self, number, *, timeout=None):
+        """ Asynchronously reads a number of bytes.
+        """
+        return await self._stream.read_bytes(number, timeout=timeout)
+
+    async def read_until(self, delimiter, *, timeout=None, max_bytes=None):
+        """ Asynchronously reads until we have found the given delimiter.
+        """
+        return await self._stream.read_until(delimiter,
+                                             timeout=timeout,
+                                             max_bytes=max_bytes)
+
+
 class StartResponse(object):
 
-    """ Start response
+    """ Controller of start response.
     """
 
     def __init__(self, stream, protocol):
@@ -63,64 +109,12 @@ class SAGIGateway(object):
         self.app = app
 
     async def __call__(self, environ, stream):
-        temp = environ.pop('SCGI', '1') + ".0"
-        environ['scgi.version'] = tuple(map(int, temp.split(".")[:2]))
-        environ['async.read_bytes'] = stream.read_bytes
-        environ['async.read_until'] = stream.read_until
-        start_response = StartResponse(stream, environ['SERVER_PROTOCOL'])
-        try:
-            await self.app(environ, start_response)
-        except:
-            exc_info = sys.exc_info()
-            if isinstance(exc_info[1], TimeoutError):
-                status = Status(408)
-            else:
-                status = Status(500)
-            write = start_response(status, [
-                ('Content-type', 'text/plain; charset=utf-8')], exc_info)
-            for line in traceback.format_exception(*exc_info):
-                await write(line.encode('UTF-8'))
-        finally:
-            await start_response.write(flush=True)
-
-
-class ErrorStream(object):
-
-    """ Request error stream
-    """
-
-    def write(self, line):
-        logging.error(line)
-
-    def writelines(self, lines):
-        for line in lines:
-            self.write(line)
-
-    def flush():
-        pass
-
-
-class WSGIGateway(object):
-
-    """ Web Server Gateway Interface.
-    """
-
-    def __init__(self, app, *, timeout=None):
-        self.app = app
-        self.timeout = timeout
-        self.default = {
-            'wsgi.version': (1, 0),
-            'wsgi.errors': ErrorStream(),
-            'wsgi.multithread': False,
-            'wsgi.multiprocess': True,
-            'wsgi.run_once': False
-        }
-
-    async def __call__(self, environ, stream):
         environ.pop('SCGI', None)
-        environ.pop('SCRIPT_NAME', None)
         environ.pop('DOCUMENT_URI', None)
-        environ.pop('DOCUMENT_ROOT', None)
+        environ.pop('QUERY_STRING', None)
+        environ['sagi.version'] = (1, 0)
+        environ['sagi.errors'] = ErrorStream(environ, self)
+        environ['sagi.input'] = InputStream(environ, stream)
         request_uri = environ.pop('REQUEST_URI', '')
         script_name = environ.pop('SCRIPT_NAME', '')
         scheme = environ.pop('REQUEST_SCHEME', 'http')
@@ -135,23 +129,16 @@ class WSGIGateway(object):
         environ['SCRIPT_NAME'] = script_name
         environ['PATH_INFO'] = path_info
         if environ.pop('HTTPS', 'off') in ('on', '1'):
-            environ['wsgi.url_scheme'] = 'https'
+            environ['sagi.url_scheme'] = 'https'
         else:
-            environ['wsgi.url_scheme'] = scheme
+            environ['sagi.url_scheme'] = scheme
+        # Makes an environ compatible with WSGI tools.
+        environ['wsgi.version'] = (1, 0)
+        environ['wsgi.errors'] = environ['sagi.errors']
+        environ['wsgi.url_scheme'] = environ['sagi.url_scheme']
         try:
-            input_body = b''
-            input_size = environ['CONTENT_LENGTH']
-            input_size = int(input_size) if input_size else 0
-            timeout = timeout_gen(self.timeout)
-            while input_size > 0:
-                data = await stream.read_bytes(stream.chunk_size,
-                                               timeout=next(timeout))
-                input_size -= len(input_size)
-                input_body += data
-            environ['wsgi.input'] = io.BytesIO(input_body)
             start_response = StartResponse(stream, environ['SERVER_PROTOCOL'])
-            for chunk in self.app(environ, start_response):
-                await start_response.write(chunk)
+            await self.app(environ, start_response)
         except:
             exc_info = sys.exc_info()
             if isinstance(exc_info[1], TimeoutError):
