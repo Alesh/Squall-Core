@@ -18,13 +18,15 @@ ERROR = IOLoop.ERROR
 TIMEOUT = 0x100
 SIGNAL = 0x400
 
+enable_pretty_logging()
+logger = logging.getLogger(__name__)
+
 
 def start():
     """ Starts event dispatching.
     """
-    enable_pretty_logging()
     loop = IOLoop.current()
-    logging.warning("Using failback event dispatcher based on Tornado")
+    logger.warning("Using failback event dispatcher based on Tornado")
     try:
         loop.start()
     except KeyboardInterrupt:

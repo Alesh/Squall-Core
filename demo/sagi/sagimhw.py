@@ -2,8 +2,7 @@ import logging
 import multiprocessing
 from squall import coroutine
 from squall.network import bind_sockets
-from squall.gateway import SAGIGateway
-from squall.backend import SCGIBackend
+from squall.gateway import SAGIGateway, SCGIBackend
 
 
 class SAGIServer(SCGIBackend):

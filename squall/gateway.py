@@ -5,6 +5,8 @@ import logging
 import traceback
 from http.server import BaseHTTPRequestHandler
 
+from squall.network import SocketStream, SocketAcceptor, timeout_gen
+
 logger = logging.getLogger(__name__)
 
 
@@ -13,6 +15,16 @@ def Status(code):
     """
     status = BaseHTTPRequestHandler.responses.get(code, ("ERROR", ""))[0]
     return "{} {}".format(code, status)
+
+
+class HTTPError(Exception):
+
+    """ HTTP Error
+    """
+
+    def __init__(self, code):
+        self.status = Status(code)
+        super(HTTPError, self).__init__(self.status)
 
 
 class ErrorStream(object):
@@ -26,7 +38,7 @@ class ErrorStream(object):
     def write(self, line):
         """ Writes one line error message.
         """
-        logging.error('%s: %s', self.source, line, extra=self.extra)
+        logger.error('%s: %s', self.source, line, extra=self.extra)
 
     def writelines(self, lines):
         """ Writes multi line error message.
@@ -112,9 +124,6 @@ class SAGIGateway(object):
         environ.pop('SCGI', None)
         environ.pop('DOCUMENT_URI', None)
         environ.pop('QUERY_STRING', None)
-        environ['sagi.version'] = (1, 0)
-        environ['sagi.errors'] = ErrorStream(environ, self)
-        environ['sagi.input'] = InputStream(environ, stream)
         request_uri = environ.pop('REQUEST_URI', '')
         script_name = environ.pop('SCRIPT_NAME', '')
         scheme = environ.pop('REQUEST_SCHEME', 'http')
@@ -128,6 +137,10 @@ class SAGIGateway(object):
             path_info = path_info[len(script_name):]
         environ['SCRIPT_NAME'] = script_name
         environ['PATH_INFO'] = path_info
+        # SAGI specific envirin variable.
+        environ['sagi.version'] = (1, 0)
+        environ['sagi.errors'] = ErrorStream(environ, self)
+        environ['sagi.input'] = InputStream(environ, stream)
         if environ.pop('HTTPS', 'off') in ('on', '1'):
             environ['sagi.url_scheme'] = 'https'
         else:
@@ -141,7 +154,9 @@ class SAGIGateway(object):
             await self.app(environ, start_response)
         except:
             exc_info = sys.exc_info()
-            if isinstance(exc_info[1], TimeoutError):
+            if isinstance(exc_info[1], HTTPError):
+                status = Status(exc_info[1].status)
+            elif isinstance(exc_info[1], TimeoutError):
                 status = Status(408)
             else:
                 status = Status(500)
@@ -151,3 +166,46 @@ class SAGIGateway(object):
                 await write(line.encode('UTF-8'))
         finally:
             await start_response.write(flush=True)
+
+
+class SCGIBackend(SocketAcceptor):
+
+    """ SCGI Backend
+    """
+
+    def __init__(self, gateway, sockets, *,
+                 timeout=None, chunk_size=8192, buffer_size=262144):
+        def stream_factory(socket_):
+            return SocketStream(socket_, chunk_size, buffer_size)
+        super(SCGIBackend, self).__init__(sockets, stream_factory)
+        self.timeout = timeout
+        self.gateway = gateway
+
+    async def handle_connection(self, stream, address):
+        """ Connection handler
+        """
+        try:
+            timeout = timeout_gen(self.timeout)
+            data = await stream.read_until(b':',
+                                           timeout=next(timeout),
+                                           max_bytes=16)
+            if data[-1] != ord(b':'):
+                raise ValueError("Wrong header size")
+            data = await stream.read_bytes(int(data[:-1]) + 1,
+                                           timeout=next(timeout))
+            if data[-1] != ord(b','):
+                raise ValueError("Wrong header format")
+            items = data.decode('UTF8').split('\000')
+            environ = dict(zip(items[::2], items[1::2]))
+            try:
+                await self.gateway(environ, stream)
+            except:
+                logger.exception("%s: Cannon handle request:",
+                                 self.__class__.__name__,
+                                 extra={'ip': address})
+        except Exception as exc:
+            logger.warning("%s: Cannon handle connection: %s",
+                           self.__class__.__name__, str(exc),
+                           extra={'ip': address})
+        finally:
+            stream.close()

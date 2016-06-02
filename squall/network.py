@@ -17,6 +17,8 @@ if hasattr(socket, 'AF_UNIX'):
 
 from squall.coroutine import spawn, ready, READ, WRITE, ERROR  # noqa
 
+logger = logging.getLogger(__name__)
+
 
 def timeout_gen(timeout):
     """ Timeout generator.
@@ -29,6 +31,18 @@ def timeout_gen(timeout):
         yield (None if deadline is None
                else (deadline - now()
                      if deadline - now() > 0 else 0.000000001))
+
+
+def format_address(addr):
+    """ Represents address as string.
+    """
+    result = str(addr)
+    if isinstance(addr, (tuple, list)):
+        if len(addr) == 2:
+            result = "{}:{}".format(*addr)
+        if len(addr) == 4:
+            result = "[{}]:{}".format(*addr[:2])
+    return result
 
 
 class SocketStream(object):
@@ -279,8 +293,8 @@ class SocketAcceptor(object):
 
     async def _listener(self, listen_socket):
         connections = dict()
-        logging.info("Established listener on {}"
-                     "".format(listen_socket.getsockname()))
+        logger.info("Established listener on %s",
+                    format_address(listen_socket.getsockname()))
 
         async def _serve(connection):
             client_socket, address = connection
@@ -307,10 +321,9 @@ class SocketAcceptor(object):
                         elif exc.errno == errno.ECONNABORTED:
                             continue
                         raise exc
-
         finally:
-            logging.info("Finished listener on {}"
-                         "".format(listen_socket.getsockname()))
+            logger.info("Finished listener on %s",
+                        format_address(listen_socket.getsockname()))
             try:
                 listen_socket.shutdown(socket.SHUT_RDWR)
             finally:
