@@ -33,17 +33,17 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     SAGIServer(9000).listen(processes=2)
 
-# $ python -O demo/scgi/sagimhw.py
+# $ python -O demo/sagi/sagimhw.py
 # $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
-# Transactions:              99950 hits
-# Availability:              99.95 %
-# Elapsed time:              24.07 secs
-# Data transferred:           1.25 MB
-# Response time:              0.21 secs
-# Transaction rate:        4152.47 trans/sec
-# Throughput:             0.05 MB/sec
-# Concurrency:              875.67
-# Successful transactions:       99950
-# Failed transactions:              50
-# Longest transaction:            7.31
+# Transactions:              99989 hits
+# Availability:              99.99 %
+# Elapsed time:              21.25 secs
+# Data transferred:           1.24 MB
+# Response time:              0.18 secs
+# Transaction rate:        4705.36 trans/sec
+# Throughput:             0.06 MB/sec
+# Concurrency:              841.68
+# Successful transactions:       99989
+# Failed transactions:              11
+# Longest transaction:           15.06
 # Shortest transaction:           0.00

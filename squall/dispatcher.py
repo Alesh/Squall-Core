@@ -59,7 +59,7 @@ class _Dispatcher(object):
 
     @classmethod
     def _stop_timeout(cls, loop, callback):
-        timeout = cls._timer_pendings.get(callback)
+        timeout = cls._timer_pendings.pop(callback, None)
         if timeout is not None:
             loop.remove_timeout(timeout)
 
@@ -145,10 +145,10 @@ class _Dispatcher(object):
             if found is not None:
                 watcher = found[index]
                 if watcher is not None:
-                    active, enable, disable = watcher
+                    active, _, disable_ = watcher
                     if active:
                         self._actives -= 1
-                        disable()
+                        disable_()
             else:
                 self._targets[target] = [None, None, None]
             self._targets[target][index] = [True, enable, disable]
@@ -203,9 +203,11 @@ class _Dispatcher(object):
             for index in range(0, 3):
                 watcher = found[index]
                 if watcher is not None:
-                    watcher[2]()
-                    watcher[0] = False
-                    self._actives -= 1
+                    active, enable, disable = watcher
+                    if active:
+                        disable()
+                        watcher[0] = False
+                        self._actives -= 1
             return True
         return False
 
@@ -218,9 +220,11 @@ class _Dispatcher(object):
             for index in range(0, 3):
                 watcher = found[index]
                 if watcher is not None:
-                    watcher[1]()
-                    watcher[0] = True
-                    self._actives += 1
+                    active, enable, disable = watcher
+                    if not active:
+                        enable()
+                        watcher[0] = True
+                        self._actives += 1
             return True
         return False
 
@@ -230,6 +234,8 @@ class _Dispatcher(object):
         if cls.disable_watching(target):
             self = cls.instance()
             self._targets.pop(target)
+            if self._actives == 0:
+                self.stop()
 
 
 start = _Dispatcher.start

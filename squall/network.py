@@ -7,15 +7,16 @@ import socket
 import logging
 from time import time as now
 from collections import deque
+from functools import partial
 
-from tornado import gen
-from tornado.ioloop import IOLoop
-from tornado.concurrent import Future
+from squall import dispatcher
+from squall.dispatcher import ERROR, READ, WRITE
+from squall.coroutine import spawn, ready, _SwitchBack
+
 from tornado.netutil import bind_sockets  # noqa
 if hasattr(socket, 'AF_UNIX'):
     from tornado.netutil import bind_unix_socket  # noqa
 
-from squall.coroutine import spawn, ready, READ, WRITE, ERROR  # noqa
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,6 @@ class SocketStream(object):
         self._socket = socket_
         self._fd = socket_.fileno()
         self._socket.setblocking(0)
-        self._loop = IOLoop.current()
         self.extra_info = dict(peername=socket_.getpeername(),
                                sockname=socket_.getsockname())
         self.chunk_size = chunk_size
@@ -89,14 +89,11 @@ class SocketStream(object):
         if prev_mask != self._mask:
 
             if self._mask > 0:
-                if prev_mask == 0:
-                    self._loop.add_handler(self._fd, self._callback, self._mask)
-                else:
-                    self._loop.update_handler(self._fd, self._mask)
+                dispatcher.setup_wait_io(self._callback, self._fd, self._mask)
             else:
-                self._loop.remove_handler(self._fd)
+                dispatcher.disable_watching(self._callback)
 
-    def _callback(self, fd, events):
+    def _callback(self, events):
         if ERROR & events:
             self._exc = IOError("Unexpected I/O loop error")
             self.running = 0
@@ -125,8 +122,8 @@ class SocketStream(object):
         done = self._task()
         if done:
             self._task = None
-            callable, arg = done
-            callable(arg)
+            target, events, payload = done
+            target(events, payload)
 
     async def read_bytes(self, number, *, timeout=None):
         """ Asynchronously reads a number of bytes.
@@ -136,38 +133,37 @@ class SocketStream(object):
         assert isinstance(number, int) and number >= 0
         assert ((isinstance(timeout, (int, float)) and
                 timeout >= 0) or timeout is None)
-        future = Future()
         number = self.buffer_size if number > self.buffer_size else number
 
-        def _check_done():
+        def _check_done(target=None):
             if self._exc is not None:
                 exc, self._exc = self._exc, None
-                return future.set_exception, exc
+                return target, ERROR, exc
             elif len(self._inbuff) >= number:
                 data = self._inbuff[:number]
                 self._inbuff = self._inbuff[number:]
-                return future.set_result, data
+                return target, READ, data
             return None
 
-        def _read_bytes():
+        def _read_bytes(target, timeout):
             self.running = READ
-            self._task = _check_done
-            if timeout:
-                deadline = now() + timeout
-                return gen.with_timeout(deadline, future, self._loop)
-            else:
-                return future
+            self._task = partial(_check_done, target)
+            if timeout > 0:
+                dispatcher.setup_wait(target, timeout)
 
         done = _check_done()
         if done:
             self._task = None
-            _, result = done
-            return result
+            _, event, payload = done
+            if event != ERROR:
+                return payload
+            else:
+                raise payload
         try:
-            return await _read_bytes()
-        except gen.TimeoutError:
+            return await _SwitchBack(_read_bytes, timeout=(timeout or 0))
+        except TimeoutError as exc:
             self._task = None
-            raise TimeoutError(errno.ETIMEDOUT, "I/O timed out")
+            raise exc
 
     async def read_until(self, delimiter, *, timeout=None, max_bytes=None):
         """ Asynchronously reads until we have found the given delimiter.
@@ -180,47 +176,46 @@ class SocketStream(object):
         assert ((isinstance(timeout, (int, float)) and
                 timeout >= 0) or timeout is None)
 
-        future = Future()
         max_bytes = (self.buffer_size
                      if max_bytes is None or max_bytes > self.buffer_size
                      else max_bytes)
 
-        def _check_done():
+        def _check_done(target=None):
             if self._exc is not None:
                 exc, self._exc = self._exc, None
-                return future.set_exception, exc
+                return target, ERROR, exc
             else:
                 pos = self._inbuff.find(delimiter)
                 if pos >= 0:
                     pos += len(delimiter)
                     data = self._inbuff[:pos]
                     self._inbuff = self._inbuff[pos:]
-                    return future.set_result, data
+                    return target, READ, data
                 elif len(self._inbuff) >= max_bytes:
                     data = self._inbuff[:max_bytes]
                     self._inbuff = self._inbuff[max_bytes:]
-                    return future.set_result, data
+                    return target, READ, data
             return None
 
-        def _read_until():
+        def _read_until(target, timeout):
             self.running = READ
-            self._task = _check_done
-            if timeout:
-                deadline = now() + timeout
-                return gen.with_timeout(deadline, future, self._loop)
-            else:
-                return future
+            self._task = partial(_check_done, target)
+            if timeout > 0:
+                dispatcher.setup_wait(target, timeout)
 
         done = _check_done()
         if done:
             self._task = None
-            _, result = done
-            return result
+            _, event, payload = done
+            if event != ERROR:
+                return payload
+            else:
+                raise payload
         try:
-            return await _read_until()
-        except gen.TimeoutError:
+            return await _SwitchBack(_read_until, timeout=(timeout or 0))
+        except TimeoutError as exc:
             self._task = None
-            raise TimeoutError(errno.ETIMEDOUT, "I/O timed out")
+            raise exc
 
     async def write(self, data=None, *, timeout=None, flush=False):
         """ Asynchronously writes outgoing data.
@@ -231,44 +226,44 @@ class SocketStream(object):
         assert ((isinstance(timeout, (int, float)) and
                 timeout >= 0) or timeout is None)
 
-        future = Future()
         if data:
             self._outbuff += data
             if (len(self._outbuff) < self.buffer_size / 4 and not flush):
                 return
 
-        def _check_done():
+        def _check_done(target=None):
             if self._exc is not None:
                 exc, self._exc = self._exc, None
-                return future.set_exception, exc
+                return target, ERROR, exc
             else:
                 if len(self._outbuff) == 0:
-                    return future.set_result, None
+                    return target, WRITE, None
             return None
 
-        def _write():
+        def _write(target, timeout):
             self.running = WRITE
-            self._task = _check_done
-            if timeout:
-                deadline = now() + timeout
-                return gen.with_timeout(deadline, future, self._loop)
-            else:
-                return future
+            self._task = partial(_check_done, target)
+            if timeout > 0:
+                dispatcher.setup_wait(target, timeout)
 
         done = _check_done()
         if done:
             self._task = None
-            _, result = done
-            return result
+            _, event, payload = done
+            if event != ERROR:
+                return payload
+            else:
+                raise payload
         try:
-            return await _write()
-        except gen.TimeoutError:
+            return await _SwitchBack(_write, timeout=(timeout or 0))
+        except TimeoutError as exc:
             self._task = None
-            raise TimeoutError(errno.ETIMEDOUT, "I/O timed out")
+            raise exc
 
     def close(self):
         """ Closes stream.
         """
+        dispatcher.release_watching(self._callback)
         if self._active:
             if self._socket:
                 try:
@@ -326,6 +321,8 @@ class SocketAcceptor(object):
                         format_address(listen_socket.getsockname()))
             try:
                 listen_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             finally:
                 listen_socket.close()
 
