@@ -33,6 +33,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     SAGIServer(9000).listen(processes=2)
 
+# Tornado
 # $ python -O demo/sagi/sagimhw.py
 # $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
 # Transactions:              99989 hits
@@ -46,4 +47,21 @@ if __name__ == '__main__':
 # Successful transactions:       99989
 # Failed transactions:              11
 # Longest transaction:           15.06
+# Shortest transaction:           0.00
+
+
+# CCX
+# $ python -O demo/sagi/sagimhw.py
+# $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
+# Transactions:              99999 hits
+# Availability:             100.00 %
+# Elapsed time:              16.41 secs
+# Data transferred:           1.24 MB
+# Response time:              0.14 secs
+# Transaction rate:        6093.78 trans/sec
+# Throughput:             0.08 MB/sec
+# Concurrency:              862.60
+# Successful transactions:       99999
+# Failed transactions:               1
+# Longest transaction:            7.33
 # Shortest transaction:           0.00

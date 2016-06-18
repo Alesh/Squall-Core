@@ -4,7 +4,11 @@ import tempfile
 from time import time
 from squall.coroutine import start, stop, spawn
 from squall.coroutine import sleep, ready, _SwitchBack
-from squall.dispatcher import setup_wait, CLEANUP, ERROR, READ, WRITE
+
+try:
+    from squall._dispatcher import setup_wait, CLEANUP, ERROR, READ, WRITE
+except ImportError:
+    from squall.failback import setup_wait, CLEANUP, ERROR, READ, WRITE
 
 
 def test_sleep():

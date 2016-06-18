@@ -137,18 +137,14 @@ class SAGIGateway(object):
             path_info = path_info[len(script_name):]
         environ['SCRIPT_NAME'] = script_name
         environ['PATH_INFO'] = path_info
-        # SAGI specific envirin variable.
-        environ['sagi.version'] = (1, 0)
-        environ['sagi.errors'] = ErrorStream(environ, self)
-        environ['sagi.input'] = InputStream(environ, stream)
+        # Squall specific envirin variable.
+        environ['squall.version'] = (1, 0)
+        environ['squall.errors'] = ErrorStream(environ, self)
+        environ['squall.input'] = InputStream(environ, stream)
         if environ.pop('HTTPS', 'off') in ('on', '1'):
-            environ['sagi.url_scheme'] = 'https'
+            environ['squall.url_scheme'] = 'https'
         else:
-            environ['sagi.url_scheme'] = scheme
-        # Makes an environ compatible with WSGI tools.
-        environ['wsgi.version'] = (1, 0)
-        environ['wsgi.errors'] = environ['sagi.errors']
-        environ['wsgi.url_scheme'] = environ['sagi.url_scheme']
+            environ['squall.url_scheme'] = scheme
         try:
             start_response = StartResponse(stream, environ['SERVER_PROTOCOL'])
             await self.app(environ, start_response)

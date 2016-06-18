@@ -1,4 +1,4 @@
-""" Event dispatcher based on tornado.
+""" Failback event dispatcher based on tornado.
 """
 import time
 import signal
@@ -9,6 +9,7 @@ import tornado.ioloop
 
 tornado.log.enable_pretty_logging()
 logger = logging.getLogger('squall')
+logger.warning("Using failback event dispatcher based on Tornado")
 
 READ = tornado.ioloop.IOLoop.READ
 WRITE = tornado.ioloop.IOLoop.WRITE

@@ -2,6 +2,8 @@
 Basics asynchronous network
 ===========================
 """
+import os
+import stat
 import errno
 import socket
 import logging
@@ -9,13 +11,13 @@ from time import time as now
 from collections import deque
 from functools import partial
 
-from squall import dispatcher
-from squall.dispatcher import ERROR, READ, WRITE
+try:
+    from squall import _dispatcher as dispatcher
+    from squall._dispatcher import ERROR, READ, WRITE
+except ImportError:
+    from squall import failback as dispatcher
+    from squall.failback import ERROR, READ, WRITE
 from squall.coroutine import spawn, ready, _SwitchBack
-
-from tornado.netutil import bind_sockets  # noqa
-if hasattr(socket, 'AF_UNIX'):
-    from tornado.netutil import bind_unix_socket  # noqa
 
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,66 @@ def timeout_gen(timeout):
         yield (None if deadline is None
                else (deadline - now()
                      if deadline - now() > 0 else 0.000000001))
+
+
+def bind_sockets(port, address=None, family=socket.AF_UNSPEC,
+                 backlog=128, reuse_port=False, flags=None):
+    """ Creates and returns a list of all listening sockets
+    """
+    if reuse_port and not hasattr(socket, "SO_REUSEPORT"):
+        raise ValueError("the platform doesn't support SO_REUSEPORT")
+    sockets = []
+    if address == "":
+        address = None
+    if flags is None:
+        flags = socket.AI_PASSIVE
+    for (af, socktype, proto, canonname, sockaddr) \
+            in set(socket.getaddrinfo(address, port, family,
+                                      socket.SOCK_STREAM, 0, flags)):
+        try:
+            socket_ = socket.socket(af, socktype, proto)
+        except socket.error:
+            logging.exception("Cannot bind socket for socket paremeters:"
+                              " {}".format((af, socktype, proto)))
+            continue
+        if os.name != 'nt':
+            socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if reuse_port:
+            socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        if af == socket.AF_INET6:
+            if hasattr(socket, "IPPROTO_IPV6"):
+                socket_.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        socket_.bind(sockaddr)
+        socket_.listen(backlog)
+        sockets.append(socket_)
+    if len(sockets) == 0:
+        logging.error("Cannon bind any sockets for function args: %s"
+                      (port, address, family, backlog, flags, reuse_port))
+    return sockets
+
+
+if hasattr(socket, 'AF_UNIX'):
+
+    def bind_unix_socket(file, mode=0o600, backlog=128):
+        """Creates a listening unix socket.
+        """
+        socket_ = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            st = os.stat(file)
+        except OSError as exc:
+            if exc.errno != errno.ENOENT:
+                raise
+        else:
+            if stat.S_ISSOCK(st.st_mode):
+                os.remove(file)
+            else:
+                raise ValueError("Cannot create unix socket, file with"
+                                 " the same name '%s' already exists", file)
+        socket_.bind(file)
+        os.chmod(file, mode)
+        socket_.listen(backlog)
+        return [socket_]
 
 
 def format_address(addr):
@@ -89,11 +151,11 @@ class SocketStream(object):
         if prev_mask != self._mask:
 
             if self._mask > 0:
-                dispatcher.setup_wait_io(self._callback, self._fd, self._mask)
+                dispatcher.setup_wait_io(self, self._fd, self._mask)
             else:
-                dispatcher.disable_watching(self._callback)
+                dispatcher.disable_watching(self)
 
-    def _callback(self, events):
+    def __call__(self, events):
         if ERROR & events:
             self._exc = IOError("Unexpected I/O loop error")
             self.running = 0
@@ -263,8 +325,9 @@ class SocketStream(object):
     def close(self):
         """ Closes stream.
         """
-        dispatcher.release_watching(self._callback)
         if self._active:
+            self._active = False
+            dispatcher.release_watching(self)
             if self._socket:
                 try:
                     self._socket.shutdown(socket.SHUT_RDWR)
@@ -272,7 +335,6 @@ class SocketStream(object):
                     pass
                 finally:
                     self._socket.close()
-            self._active = False
 
 
 class SocketAcceptor(object):
@@ -302,6 +364,7 @@ class SocketAcceptor(object):
 
         try:
             fd = listen_socket.fileno()
+            listen_socket.setblocking(0)
             while True:
                 await ready(fd, READ)
                 repeat = 64

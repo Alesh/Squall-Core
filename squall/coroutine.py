@@ -8,8 +8,13 @@ import logging
 from collections import deque
 from signal import SIGINT, SIGTERM
 
-from squall import dispatcher
-from squall.dispatcher import READ, WRITE
+try:
+    from squall import _dispatcher as dispatcher
+    from squall._dispatcher import READ, WRITE
+except ImportError:
+    from squall import failback as dispatcher
+    from squall.failback import READ, WRITE
+
 
 logger = logging.getLogger(__name__)
 

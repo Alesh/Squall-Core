@@ -1,9 +1,15 @@
 import os
 import os.path
 import tempfile
-from squall.dispatcher import start, stop, setup_wait
-from squall.dispatcher import READ, WRITE, TIMEOUT, CLEANUP
-from squall.dispatcher import setup_wait_io, release_watching
+
+try:
+    from squall._dispatcher import start, stop, setup_wait
+    from squall._dispatcher import READ, WRITE, TIMEOUT, CLEANUP
+    from squall._dispatcher import setup_wait_io, release_watching
+except ImportError:
+    from squall.failback import start, stop, setup_wait
+    from squall.failback import READ, WRITE, TIMEOUT, CLEANUP
+    from squall.failback import setup_wait_io, release_watching
 
 
 def test_setup_wait():

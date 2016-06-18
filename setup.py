@@ -7,7 +7,7 @@ if sys.version_info[:2] < (3, 5):
 
 settings = {
     'name': 'squall',
-    'version': '0.1a1',
+    'version': '0.1a2',
     'namespace_packages': ['squall'],
     'py_modules': ['squall.coroutine',
                    'squall.network',
@@ -17,10 +17,19 @@ settings = {
     'description': "The Squall is the nano-framework that"
                    " implements cooperative event-driven"
                    " concurrency and asynchronous networking.",
-    'install_requires': [],
+    'install_requires': ['squall-cxx>=0.1a2'],
+    'dependency_links': [
+        'git+https://github.com/Alesh/Squall-CXX.git@master#egg=squall-cxx-0.1a2'
+    ],
     'zip_safe': False,
 }
 
-settings['install_requires'].append('tornado>=4.3')
-
-setup(**settings)
+try:
+    setup(**settings)
+except BaseException as exc:
+    settings['py_modules'].append('squall.failback')
+    settings['install_requires'].remove('squall.cxx')
+    settings['install_requires'].append('tornado >= 4.3')
+    print("\nWARNING! Cannot install event dispatcher from 'squall.cxx'")
+    print("WARNING! Will be used failback event dispatcher based on tornado\n")
+    setup(**settings)
