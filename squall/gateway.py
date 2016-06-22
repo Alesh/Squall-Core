@@ -22,8 +22,9 @@ class HTTPError(Exception):
     """ HTTP Error
     """
 
-    def __init__(self, code):
+    def __init__(self, code, headers=[]):
         self.status = Status(code)
+        self.headers = headers
         super(HTTPError, self).__init__(self.status)
 
 
@@ -124,8 +125,11 @@ class SAGIGateway(object):
         environ.pop('SCGI', None)
         environ.pop('DOCUMENT_URI', None)
         environ.pop('QUERY_STRING', None)
+        environ.pop('DOCUMENT_ROOT', None)
+        protocol = environ.pop('SERVER_PROTOCOL', None)
+        environ['SERVER_PROTOCOL'] = protocol or 'HTTP/1.0'
         request_uri = environ.pop('REQUEST_URI', '')
-        script_name = environ.pop('SCRIPT_NAME', '')
+        script_name = environ.pop('SCRIPT_NAME', '/')
         scheme = environ.pop('REQUEST_SCHEME', 'http')
         query_pos = request_uri.find('?')
         if query_pos > 0:
@@ -136,7 +140,7 @@ class SAGIGateway(object):
         if path_info.find(script_name):
             path_info = path_info[len(script_name):]
         environ['SCRIPT_NAME'] = script_name
-        environ['PATH_INFO'] = path_info
+        environ['PATH_INFO'] = path_info or '/'
         # Squall specific envirin variable.
         environ['squall.version'] = (1, 0)
         environ['squall.errors'] = ErrorStream(environ, self)
@@ -149,15 +153,16 @@ class SAGIGateway(object):
             start_response = StartResponse(stream, environ['SERVER_PROTOCOL'])
             await self.app(environ, start_response)
         except:
+            headers = [('Content-type', 'text/plain; charset=utf-8')]
             exc_info = sys.exc_info()
             if isinstance(exc_info[1], HTTPError):
                 status = Status(exc_info[1].status)
+                headers.extend(exc_info[1].headers)
             elif isinstance(exc_info[1], TimeoutError):
                 status = Status(408)
             else:
                 status = Status(500)
-            write = start_response(status, [
-                ('Content-type', 'text/plain; charset=utf-8')], exc_info)
+            write = start_response(status, headers, exc_info)
             for line in traceback.format_exception(*exc_info):
                 await write(line.encode('UTF-8'))
         finally:
