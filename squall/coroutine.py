@@ -9,12 +9,11 @@ from collections import deque
 from signal import SIGINT, SIGTERM
 
 try:
-    from squall import _dispatcher as dispatcher
-    from squall._dispatcher import READ, WRITE
+    from squall import _squall as dispatcher
+    from squall._squall import READ, WRITE
 except ImportError:
-    from squall import failback as dispatcher
-    from squall.failback import READ, WRITE
-
+    from squall import _tornado as dispatcher
+    from squall._tornado import READ, WRITE
 
 logger = logging.getLogger(__name__)
 

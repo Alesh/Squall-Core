@@ -12,13 +12,12 @@ from collections import deque
 from functools import partial
 
 try:
-    from squall import _dispatcher as dispatcher
-    from squall._dispatcher import ERROR, READ, WRITE
+    from squall import _squall as dispatcher
+    from squall._squall import ERROR, READ, WRITE
 except ImportError:
-    from squall import failback as dispatcher
-    from squall.failback import ERROR, READ, WRITE
+    from squall import _tornado as dispatcher
+    from squall._tornado import ERROR, READ, WRITE
 from squall.coroutine import spawn, ready, _SwitchBack
-
 
 logger = logging.getLogger(__name__)
 

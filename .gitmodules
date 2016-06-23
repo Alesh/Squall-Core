@@ -1,0 +1,3 @@
+[submodule "cxx"]
+	path = cxx
+	url = https://github.com/Alesh/Squall-CXX.git

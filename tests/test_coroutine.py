@@ -6,9 +6,11 @@ from squall.coroutine import start, stop, spawn
 from squall.coroutine import sleep, ready, _SwitchBack
 
 try:
-    from squall._dispatcher import setup_wait, CLEANUP, ERROR, READ, WRITE
+    from squall._squall import setup_wait
+    from squall._squall import CLEANUP, ERROR, READ, WRITE
 except ImportError:
-    from squall.failback import setup_wait, CLEANUP, ERROR, READ, WRITE
+    from squall._tornado import setup_wait
+    from squall._tornado import CLEANUP, ERROR, READ, WRITE
 
 
 def test_sleep():

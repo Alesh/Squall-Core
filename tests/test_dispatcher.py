@@ -3,13 +3,13 @@ import os.path
 import tempfile
 
 try:
-    from squall._dispatcher import start, stop, setup_wait
-    from squall._dispatcher import READ, WRITE, TIMEOUT, CLEANUP
-    from squall._dispatcher import setup_wait_io, release_watching
+    from squall._squall import start, stop, setup_wait
+    from squall._squall import CLEANUP, TIMEOUT, READ, WRITE
+    from squall._squall import setup_wait_io, release_watching
 except ImportError:
-    from squall.failback import start, stop, setup_wait
-    from squall.failback import READ, WRITE, TIMEOUT, CLEANUP
-    from squall.failback import setup_wait_io, release_watching
+    from squall._tornado import start, stop, setup_wait
+    from squall._tornado import CLEANUP, TIMEOUT, READ, WRITE
+    from squall._tornado import setup_wait_io, release_watching
 
 
 def test_setup_wait():
