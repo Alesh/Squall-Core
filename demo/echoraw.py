@@ -6,7 +6,7 @@ from socket import SHUT_RDWR
 
 from squall import coroutine
 from squall.coroutine import ready, READ, WRITE
-from squall.network import bind_sockets, timeout_gen
+from squall.utility import bind_sockets, timeout_gen
 
 
 async def echo_handler(socket, address):
@@ -33,9 +33,11 @@ async def echo_acceptor(socket):
     connections = dict()
     logging.info("Established echo listener on {}"
                  "".format(socket.getsockname()))
+    socket.setblocking(0)
 
     async def _serve(connection):
         client_socket, address = connection
+        client_socket.setblocking(0)
         try:
             await echo_handler(client_socket, address)
         finally:

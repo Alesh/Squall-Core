@@ -2,14 +2,15 @@
 """
 import logging
 from squall import coroutine
-from squall.network import SocketAcceptor, bind_sockets, timeout_gen
+from squall.network import SocketAcceptor
+from squall.utility import bind_sockets, timeout_gen
 
 
 class EchoServer(SocketAcceptor):
 
     def __init__(self, port):
         sockets = bind_sockets(port)
-        super(EchoServer, self).__init__(sockets)
+        super(EchoServer, self).__init__(sockets, self.handle_connection)
 
     def listen(self):
         super(EchoServer, self).listen()

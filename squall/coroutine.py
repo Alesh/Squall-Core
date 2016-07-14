@@ -1,6 +1,5 @@
 """
-Event-driven coroutine switching
-================================
+Implementation of event-driven async/await coroutine switching.
 """
 import errno
 import logging
@@ -10,10 +9,10 @@ from signal import SIGINT, SIGTERM
 
 try:
     from squall import _squall as dispatcher
-    from squall._squall import READ, WRITE
+    from squall._squall import READ, WRITE, ERROR, TIMEOUT
 except ImportError:
     from squall import _tornado as dispatcher
-    from squall._tornado import READ, WRITE
+    from squall._tornado import READ, WRITE, ERROR, TIMEOUT  # noqa
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +152,15 @@ def signal(signum):
     return _SwitchBack(dispatcher.setup_wait_signal, signum)
 
 
-def run():
+def run(on_stop=None):
     """ Runs the event dispatching until SIGINT or SIGTERM.
     """
     async def terminator(signum):
         await signal(signum)
-        stop()
+        if on_stop is None:
+            stop()
+        else:
+            on_stop()
 
     for signum in (SIGTERM, SIGINT):
         spawn(terminator, signum)

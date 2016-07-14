@@ -2,7 +2,7 @@ import html
 import logging
 from squall import coroutine
 from squall.network import bind_sockets
-from squall.gateway import SAGIGateway, SCGIBackend
+from gateway import SAGIGateway
 
 HTML = """
 <!DOCTYPE html>
@@ -22,15 +22,15 @@ HTML = """
 """
 
 
-class SAGIServer(SCGIBackend):
+class SAGIServer(SAGIGateway):
 
-    def __init__(self, port, address=None):
-        gateway = SAGIGateway(self.handle_request)
+    def __init__(self):
+        super(SAGIServer, self).__init__(
+            self.handle_request, timeout=15.0)
+
+    def start(self, port, address=None):
         sockets = bind_sockets(port, address=address, backlog=256)
-        super(SAGIServer, self).__init__(gateway, sockets, timeout=15.0)
-
-    def listen(self):
-        super(SAGIServer, self).listen()
+        super(SAGIServer, self).start(sockets)
         coroutine.run()
 
     async def handle_request(self, environ, start_response):
@@ -46,5 +46,5 @@ class SAGIServer(SCGIBackend):
 
 if __name__ == '__main__':
 
-    logging.basicConfig(level=logging.INFO)
-    SAGIServer(9000).listen()
+    logging.basicConfig(level=logging.DEBUG)
+    SAGIServer().start(9000)

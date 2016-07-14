@@ -5,7 +5,8 @@ import logging
 import traceback
 from http.server import BaseHTTPRequestHandler
 
-from squall.network import SocketStream, SocketAcceptor, timeout_gen
+from squall.network import SocketAcceptor, SocketStream
+from squall.utility import timeout_gen, format_address
 
 logger = logging.getLogger(__name__)
 
@@ -115,13 +116,72 @@ class StartResponse(object):
 
 class SAGIGateway(object):
 
-    """ Squall Asynchronous Gateway Interface.
+    """ SAGI Gateway
     """
 
-    def __init__(self, app):
+    def __init__(self, app, *, timeout=None, stream_factory=None):
         self.app = app
+        self.timeout = timeout
+        self.acceptors = list()
+        self.stream_factory = (stream_factory or
+                               (lambda sock: SocketStream(sock, 8192, 262144)))
 
-    async def __call__(self, environ, stream):
+    def active(self):
+        """ Returns `True` if gateway is active"""
+        return len(self.acceptors) > 0
+
+    def start(self, sockets):
+        """ Starts
+        """
+        def stream_factory(socket_):
+            return SocketStream(socket_, 8192, 262144)
+
+        acceptor = SocketAcceptor(sockets, self.connection_handler,
+                                  self.stream_factory or stream_factory)
+        if acceptor.listen():
+            self.acceptors.append(acceptor)
+
+    def stop(self):
+        for acceptor in self.acceptors:
+            acceptor.close()
+        self.acceptors.clear()
+
+    async def connection_handler(self, stream, address):
+        try:
+            timeout = timeout_gen(self.timeout)
+            data = await stream.read_until(b':',
+                                           timeout=next(timeout),
+                                           max_bytes=16)
+            if data[-1] != ord(b':'):
+                raise ValueError("Wrong header size")
+            data = await stream.read_bytes(int(data[:-1]) + 1,
+                                           timeout=next(timeout))
+            if data[-1] != ord(b','):
+                raise ValueError("Wrong header format")
+            items = data.decode('UTF8').split('\000')
+            environ = dict(zip(items[::2], items[1::2]))
+            try:
+                await self.request_handler(environ, stream)
+            except Exception as exc:
+                msg = ("{}: Cannon handle request from %s : %s"
+                       "".format(self.__class__.__name__))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.exception(msg, format_address(address), exc)
+                else:
+                    logger.error(msg, format_address(address), exc)
+        except Exception as exc:
+            msg = ("{}: Cannon handle connection from %s"
+                   "".format(self.__class__.__name__))
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.exception(msg, format_address(address), exc)
+            else:
+                logger.error(msg, format_address(address), exc)
+        finally:
+            stream.close()
+
+    async def request_handler(self, environ, stream):
+        """ Async SCGI request handler
+        """
         environ.pop('SCGI', None)
         environ.pop('DOCUMENT_URI', None)
         environ.pop('QUERY_STRING', None)
@@ -167,46 +227,3 @@ class SAGIGateway(object):
                 await write(line.encode('UTF-8'))
         finally:
             await start_response.write(flush=True)
-
-
-class SCGIBackend(SocketAcceptor):
-
-    """ SCGI Backend
-    """
-
-    def __init__(self, gateway, sockets, *,
-                 timeout=None, chunk_size=8192, buffer_size=262144):
-        def stream_factory(socket_):
-            return SocketStream(socket_, chunk_size, buffer_size)
-        super(SCGIBackend, self).__init__(sockets, stream_factory)
-        self.timeout = timeout
-        self.gateway = gateway
-
-    async def handle_connection(self, stream, address):
-        """ Connection handler
-        """
-        try:
-            timeout = timeout_gen(self.timeout)
-            data = await stream.read_until(b':',
-                                           timeout=next(timeout),
-                                           max_bytes=16)
-            if data[-1] != ord(b':'):
-                raise ValueError("Wrong header size")
-            data = await stream.read_bytes(int(data[:-1]) + 1,
-                                           timeout=next(timeout))
-            if data[-1] != ord(b','):
-                raise ValueError("Wrong header format")
-            items = data.decode('UTF8').split('\000')
-            environ = dict(zip(items[::2], items[1::2]))
-            try:
-                await self.gateway(environ, stream)
-            except:
-                logger.exception("%s: Cannon handle request:",
-                                 self.__class__.__name__,
-                                 extra={'ip': address})
-        except Exception as exc:
-            logger.warning("%s: Cannon handle connection: %s",
-                           self.__class__.__name__, str(exc),
-                           extra={'ip': address})
-        finally:
-            stream.close()

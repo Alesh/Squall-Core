@@ -1,21 +1,33 @@
 import sys
+from subprocess import check_call
 from setuptools import setup, Extension
+from setuptools.command.build_py import build_py
+
+
+class build_with_submodules(build_py):
+
+    def run(self):
+        check_call(['git', 'submodule', 'init'])
+        check_call(['git', 'submodule', 'update'])
+        build_py.run(self)
+
 
 if sys.version_info[:2] < (3, 5):
     raise NotImplementedError("Required python version 3.5 or greater")
 
 settings = {
     'name': 'squall',
-    'version': '0.2.dev0',
+    'version': '0.2.dev2',
     'namespace_packages': ['squall'],
     'py_modules': ['squall.coroutine',
                    'squall.network',
-                   'squall.gateway'],
+                   'squall.utility'],
     'author': "Alexey Poryadin",
     'author_email': "alexey.poryadin@gmail.com",
     'description': "The Squall is the nano-framework that"
                    " implements cooperative event-driven"
                    " concurrency and asynchronous networking.",
+    'cmdclass': {'build_py': build_with_submodules},
     'install_requires': [],
     'zip_safe': False,
 

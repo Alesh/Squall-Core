@@ -2,20 +2,20 @@ import logging
 import multiprocessing
 from squall import coroutine
 from squall.network import bind_sockets
-from squall.gateway import SAGIGateway, SCGIBackend
+from gateway import SAGIGateway
 
 
-class SAGIServer(SCGIBackend):
+class SAGIServer(SAGIGateway):
 
-    def __init__(self, port, address=None):
-        gateway = SAGIGateway(self.handle_request)
+    def __init__(self):
+        super(SAGIServer, self).__init__(
+            self.handle_request, timeout=15.0)
+
+    def start(self, port, address=None, processes=None):
         sockets = bind_sockets(port, address=address, backlog=256)
-        super(SAGIServer, self).__init__(gateway, sockets, timeout=15.0)
-
-    def listen(self, processes=None):
 
         def start_worker():
-            super(SAGIServer, self).listen()
+            super(SAGIServer, self).start(sockets)
             coroutine.run()
 
         for _ in range(0, (processes or multiprocessing.cpu_count()) - 1):
@@ -31,37 +31,68 @@ class SAGIServer(SCGIBackend):
 if __name__ == '__main__':
 
     logging.basicConfig(level=logging.INFO)
-    SAGIServer(9000).listen(processes=2)
+    SAGIServer().start(9000, processes=2)
 
 # Tornado
 # $ python -O demo/sagi/sagimhw.py
 # $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
-# Transactions:              99989 hits
-# Availability:              99.99 %
-# Elapsed time:              21.25 secs
+# Transactions:              99998 hits
+# Availability:             100.00 %
+# Elapsed time:              22.54 secs
 # Data transferred:           1.24 MB
-# Response time:              0.18 secs
-# Transaction rate:        4705.36 trans/sec
+# Response time:              0.20 secs
+# Transaction rate:        4436.47 trans/sec
 # Throughput:             0.06 MB/sec
-# Concurrency:              841.68
-# Successful transactions:       99989
-# Failed transactions:              11
-# Longest transaction:           15.06
+# Concurrency:              865.14
+# Successful transactions:       99998
+# Failed transactions:               2
+# Longest transaction:            7.27
+# Shortest transaction:           0.00
+
+
+# $ siege -c 400 -b -r 100 http://127.0.0.1:8000
+# Transactions:              40000 hits
+# Availability:             100.00 %
+# Elapsed time:               7.07 secs
+# Data transferred:           0.50 MB
+# Response time:              0.06 secs
+# Transaction rate:        5657.71 trans/sec
+# Throughput:             0.07 MB/sec
+# Concurrency:              365.58
+# Successful transactions:       40000
+# Failed transactions:               0
+# Longest transaction:            1.25
 # Shortest transaction:           0.00
 
 
 # CCX
 # $ python -O demo/sagi/sagimhw.py
 # $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
-# Transactions:              99999 hits
+# Transactions:             100000 hits
 # Availability:             100.00 %
-# Elapsed time:              16.41 secs
+# Elapsed time:              17.43 secs
 # Data transferred:           1.24 MB
-# Response time:              0.14 secs
-# Transaction rate:        6093.78 trans/sec
-# Throughput:             0.08 MB/sec
-# Concurrency:              862.60
-# Successful transactions:       99999
-# Failed transactions:               1
-# Longest transaction:            7.33
+# Response time:              0.15 secs
+# Transaction rate:        5737.23 trans/sec
+# Throughput:             0.07 MB/sec
+# Concurrency:              883.11
+# Successful transactions:      100000
+# Failed transactions:               0
+# Longest transaction:            7.07
+# Shortest transaction:           0.00
+
+
+# siege -c 400 -b -r 100 http://127.0.0.1:8000
+# Transactions:              40000 hits
+# Availability:             100.00 %
+# Elapsed time:               5.19 secs
+# Data transferred:           0.50 MB
+# Response time:              0.05 secs
+# Transaction rate:        7707.13 trans/sec
+# Throughput:             0.10 MB/sec
+# Concurrency:              355.91
+# Successful transactions:       40000
+# Failed transactions:               0
+# Longest transaction:            1.24
+# Shortest transaction:           0.00
 # Shortest transaction:           0.00

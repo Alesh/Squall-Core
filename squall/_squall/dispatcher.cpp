@@ -125,7 +125,7 @@ extern "C" PyObject *pyReleaseWatching(PyObject *self, PyObject *args) {
     Py_RETURN_FALSE;
 }
 
-PyMODINIT_FUNC PyInit__dispatcher(void) {
+PyMODINIT_FUNC PyInit__squall(void) {
     PyObject *module = nullptr;
 
     static PyMethodDef method_def[] = {
