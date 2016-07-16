@@ -67,7 +67,7 @@ class SocketAutoBuffer(object):
             else:
                 dispatcher.disable_watching(self)
 
-    def __call__(self, events):
+    def __call__(self, events, payload):
         if ERROR & events:
             self._exc = IOError("Unexpected I/O loop error")
             self.running = 0

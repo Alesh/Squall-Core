@@ -1,4 +1,5 @@
 import os
+import time
 import os.path
 import tempfile
 
@@ -17,15 +18,15 @@ def test_setup_wait():
     calls = list()
     result = list()
 
-    def callback01(revents):
+    def callback01(revents, payload):
         result.append((0.1, revents))
         return True
 
-    def callback15(revents):
+    def callback15(revents, payload):
         result.append((0.151, revents))
         return True
 
-    def callback02(revents):
+    def callback02(revents, payload):
         result.append((0.21, revents))
         calls.append(True)
         if len(calls) == 1:
@@ -50,11 +51,11 @@ def test_exception():
     call = list()
     result = list()
 
-    def callback01(revents):
+    def callback01(revents, payload):
         result.append((0.1, revents))
         return True
 
-    def callback15(revents):
+    def callback15(revents, payload):
         result.append((0.15, revents))
         call.append(True)
         if len(call) == 2:
@@ -83,11 +84,11 @@ def test_setup_wait_io():
     out_fifo = os.open(tempname, os.O_RDONLY | os.O_NONBLOCK)
     in_fifo = os.open(tempname, os.O_WRONLY | os.O_NONBLOCK)
 
-    def callback01(revents):
+    def callback01(revents, payload):
         result.append((0.1, revents))
         return True
 
-    def callback15(revents):
+    def callback15(revents, payload):
         result.append((0.15, revents))
         call.append(True)
         if len(call) == 1:
@@ -96,10 +97,10 @@ def test_setup_wait_io():
             stop()
         return True
 
-    def callbackIN(revents):
+    def callbackIN(revents, payload):
         result.append(('IN', revents))
 
-    def callbackOUT(revents):
+    def callbackOUT(revents, payload):
         result.append(('OUT', revents))
         if READ & revents:
             result.append(('OUT', os.read(out_fifo, 1024)))
@@ -129,6 +130,50 @@ def test_setup_wait_io():
                       ('OUT', READ), ('OUT', b'AAA'), (0.1, TIMEOUT),
                       (0.1, TIMEOUT), (0.15, TIMEOUT)]
 
+
+def test_multiwatchers():
+
+    result = list()
+    start_at = time.time()
+
+    tempname = tempfile.mkdtemp()
+    tempnameA = os.path.join(tempname, 'A')
+    tempnameB = os.path.join(tempname, 'B')
+    os.mkfifo(tempnameA)
+    os.mkfifo(tempnameB)
+    fifoA = os.open(tempnameA, os.O_RDWR | os.O_NONBLOCK)
+    fifoB = os.open(tempnameB, os.O_RDWR | os.O_NONBLOCK)
+
+    def callback(revents, payload):
+        stamp = round(time.time() - start_at, 2)
+        if revents == WRITE:
+            stamp = (stamp, payload)
+            setup_wait_io(callback, payload, READ)
+        elif revents == READ:
+            stamp = (stamp, payload, os.read(fifoA, 1024))
+        else:
+            os.write(fifoA, b'A')
+            setup_wait_io(callback, fifoB, WRITE)
+        result.append((stamp, revents))
+        return True
+
+    try:
+        setup_wait(callback, 0.1)
+        setup_wait(callback, 0.15)
+        setup_wait_io(callback, fifoA, WRITE)
+        setup_wait(lambda *args: stop(), 0.31)
+        start()
+    finally:
+        os.unlink(tempnameA)
+        os.unlink(tempnameB)
+
+    assert result == [
+        ((0.0, fifoA), WRITE),
+        (0.15, TIMEOUT), ((0.15, fifoB), WRITE), ((0.15, fifoA, b'A'), READ),
+        (0.3, TIMEOUT), ((0.3, fifoB), WRITE), ((0.3, fifoA, b'A'), READ),
+        (0.31, CLEANUP)]
+
+
 if __name__ == '__main__':
 
     test_setup_wait()
@@ -137,3 +182,4 @@ if __name__ == '__main__':
     test_setup_wait()
     test_exception()
     test_setup_wait_io()
+    test_multiwatchers()

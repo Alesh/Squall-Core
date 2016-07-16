@@ -105,11 +105,11 @@ def test__SwitchBack_ERROR_CLEANUP():
 
     spawn(corofunc01)
     spawn(corofuncSW, 'A')
-    setup_wait(lambda event: switch_back[0](event), 0.11)
-    setup_wait(lambda event: switch_back[0](ERROR), 0.21)
-    setup_wait(lambda event: switch_back[0](event), 0.31)
-    setup_wait(lambda event: switch_back[0](CLEANUP), 0.51)
-    setup_wait(lambda event: stop(), 0.61)
+    setup_wait(lambda event, _: switch_back[0](event), 0.11)
+    setup_wait(lambda event, _: switch_back[0](ERROR), 0.21)
+    setup_wait(lambda event, _: switch_back[0](event), 0.31)
+    setup_wait(lambda event, _: switch_back[0](CLEANUP), 0.51)
+    setup_wait(lambda event, _: stop(), 0.61)
     start()
 
     assert result == ['<<', '<<A', '*', 256, '*', 'ERR',

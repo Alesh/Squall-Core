@@ -83,10 +83,10 @@ class _Dispatcher(object):
             signal.signal(signum, cls._signal_handler)
         cls._signal_pendings[signum][callback] = loop
 
-    def _event_handler(self, target, events):
+    def _event_handler(self, target, events, payload=None):
         self.disable_watching(target)
         try:
-            if target(events):
+            if target(events, payload):
                 self.enable_watching(target)
         except Exception as exc:
             self.stop(exc)
@@ -133,26 +133,25 @@ class _Dispatcher(object):
         found = self._targets.get(target)
         if found is not None:
             for index in range(0, 3):
-                watcher = found[index]
-                if watcher is not None:
+                for watcher in found[index].values():
                     active, _, _ = watcher
                     if active:
                         return True
         return False
 
-    def _reset_watching(self, target, index, enable, disable):
+    def _reset_watching(self, target, index, key, enable, disable):
         if not self._cleanup:
             found = self._targets.get(target)
             if found is not None:
-                watcher = found[index]
+                watcher = found[index].get(key)
                 if watcher is not None:
                     active, _, disable_ = watcher
                     if active:
                         self._actives -= 1
                         disable_()
             else:
-                self._targets[target] = [None, None, None]
-            self._targets[target][index] = [True, enable, disable]
+                self._targets[target] = [dict(), dict(), dict()]
+            self._targets[target][index][key] = [True, enable, disable]
             self._actives += 1
             enable()
 
@@ -161,11 +160,11 @@ class _Dispatcher(object):
         """ Sets up I/O event watching. """
         self = cls.instance()
 
-        def callback(_, events):
-            self._event_handler(target, events)
+        def callback(fd, events):
+            self._event_handler(target, events, fd)
 
         self._reset_watching(
-            target, 0,
+            target, 0, fd,
             lambda: self._loop.add_handler(fd, callback, mask),
             lambda: self._loop.remove_handler(fd))
 
@@ -178,7 +177,7 @@ class _Dispatcher(object):
             self._event_handler(target, TIMEOUT)
 
         self._reset_watching(
-            target, 1,
+            target, 1, 0,
             lambda: cls._start_timeout(self._loop, secs, callback),
             lambda: cls._stop_timeout(self._loop, callback))
 
@@ -188,10 +187,10 @@ class _Dispatcher(object):
         self = cls.instance()
 
         def callback():
-            self._event_handler(target, SIGNAL)
+            self._event_handler(target, SIGNAL, signum)
 
         self._reset_watching(
-            target, 2,
+            target, 2, signum,
             lambda: cls._start_signal(self._loop, signum, callback),
             lambda: cls._stop_signal(self._loop, signum, callback))
 
@@ -202,8 +201,7 @@ class _Dispatcher(object):
         found = self._targets.get(target)
         if found is not None:
             for index in range(0, 3):
-                watcher = found[index]
-                if watcher is not None:
+                for watcher in found[index].values():
                     active, enable, disable = watcher
                     if active:
                         disable()
@@ -219,8 +217,7 @@ class _Dispatcher(object):
         found = self._targets.get(target)
         if found is not None:
             for index in range(0, 3):
-                watcher = found[index]
-                if watcher is not None:
+                for watcher in found[index].values():
                     active, enable, disable = watcher
                     if not active:
                         enable()

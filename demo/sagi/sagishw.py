@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
 # Tornado
 # $ python -O demo/sagi/sagishw.py
-# $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
+# $ siege -c 1000 -b -r 100 http://127.0.0.1
 # Transactions:              99732 hits
 # Availability:              99.73 %
 # Elapsed time:              41.11 secs
@@ -42,48 +42,50 @@ if __name__ == '__main__':
 # Shortest transaction:           0.00
 
 # $ python -O demo/sagi/sagishw.py
-# $ siege -c 400 -b -r 100 http://127.0.0.1:8000
+# $ siege -c 400 -b -r 100 http://127.0.0.1
 # Transactions:              40000 hits
 # Availability:             100.00 %
-# Elapsed time:              12.35 secs
+# Elapsed time:              13.27 secs
 # Data transferred:           0.50 MB
 # Response time:              0.11 secs
-# Transaction rate:        3238.87 trans/sec
+# Transaction rate:        3014.32 trans/sec
 # Throughput:             0.04 MB/sec
-# Concurrency:              361.41
+# Concurrency:              326.91
 # Successful transactions:       40000
 # Failed transactions:               0
-# Longest transaction:            3.46
-# Shortest transaction:           0.03
+# Longest transaction:            7.07
+# Shortest transaction:           0.02
+
 
 
 # CCX
 # $ python -O demo/sagi/sagishw.py
-# $ siege -c 1000 -b -r 100 http://127.0.0.1:8000
-# Transactions:              99573 hits
-# Availability:              99.57 %
-# Elapsed time:              20.39 secs
-# Data transferred:           1.28 MB
+# $ siege -c 1000 -b -r 100 http://127.0.0.1
+# Transactions:              99667 hits
+# Availability:              99.67 %
+# Elapsed time:              20.21 secs
+# Data transferred:           1.30 MB
 # Response time:              0.17 secs
-# Transaction rate:        4883.42 trans/sec
+# Transaction rate:        4931.57 trans/sec
 # Throughput:             0.06 MB/sec
-# Concurrency:              854.60
-# Successful transactions:       99573
-# Failed transactions:             427
-# Longest transaction:            7.46
+# Concurrency:              821.48
+# Successful transactions:       99667
+# Failed transactions:             333
+# Longest transaction:           15.69
 # Shortest transaction:           0.00
 
 
-# $ siege -c 400 -b -r 100 http://127.0.0.1:8000
-# Transactions:              39999 hits
+
+# $ siege -c 400 -b -r 100 http://127.0.0.1
+# Transactions:              40000 hits
 # Availability:             100.00 %
-# Elapsed time:               7.68 secs
+# Elapsed time:               7.83 secs
 # Data transferred:           0.50 MB
 # Response time:              0.07 secs
-# Transaction rate:        5208.20 trans/sec
+# Transaction rate:        5108.56 trans/sec
 # Throughput:             0.06 MB/sec
-# Concurrency:              338.76
-# Successful transactions:       39999
-# Failed transactions:               1
-# Longest transaction:            3.23
+# Concurrency:              339.80
+# Successful transactions:       40000
+# Failed transactions:               0
+# Longest transaction:            3.46
 # Shortest transaction:           0.00
