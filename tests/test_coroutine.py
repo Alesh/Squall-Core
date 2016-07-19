@@ -2,15 +2,12 @@ import os
 import os.path
 import tempfile
 from time import time
+from squall.coroutine import dispatcher
 from squall.coroutine import start, stop, spawn
 from squall.coroutine import sleep, ready, _SwitchBack
+from squall.coroutine import ERROR, READ, WRITE
 
-try:
-    from squall._squall import setup_wait
-    from squall._squall import CLEANUP, ERROR, READ, WRITE
-except ImportError:
-    from squall._tornado import setup_wait
-    from squall._tornado import CLEANUP, ERROR, READ, WRITE
+CLEANUP = dispatcher.CLEANUP
 
 
 def test_sleep():
@@ -105,11 +102,11 @@ def test__SwitchBack_ERROR_CLEANUP():
 
     spawn(corofunc01)
     spawn(corofuncSW, 'A')
-    setup_wait(lambda event, _: switch_back[0](event), 0.11)
-    setup_wait(lambda event, _: switch_back[0](ERROR), 0.21)
-    setup_wait(lambda event, _: switch_back[0](event), 0.31)
-    setup_wait(lambda event, _: switch_back[0](CLEANUP), 0.51)
-    setup_wait(lambda event, _: stop(), 0.61)
+    dispatcher.setup_wait(lambda event, _: switch_back[0](event), 0.11)
+    dispatcher.setup_wait(lambda event, _: switch_back[0](ERROR), 0.21)
+    dispatcher.setup_wait(lambda event, _: switch_back[0](event), 0.31)
+    dispatcher.setup_wait(lambda event, _: switch_back[0](CLEANUP), 0.51)
+    dispatcher.setup_wait(lambda event, _: stop(), 0.61)
     start()
 
     assert result == ['<<', '<<A', '*', 256, '*', 'ERR',

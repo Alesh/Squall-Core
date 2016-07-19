@@ -1,22 +1,17 @@
-""" The example of single-threaded async TCP server.
+""" The example of async TCP echo server.
 """
 import logging
-from squall import coroutine
-from squall.network import SocketAcceptor
-from squall.utility import bind_sockets, timeout_gen
+from squall.network import SocketServer
+from squall.utility import timeout_gen
 
 
-class EchoServer(SocketAcceptor):
+class EchoServer(SocketServer):
 
-    def __init__(self, port):
-        sockets = bind_sockets(port)
-        super(EchoServer, self).__init__(sockets, self.handle_connection)
+    def __init__(self):
+        super(EchoServer, self).__init__()
+        self._stream_handler = self.handle_stream
 
-    def listen(self):
-        super(EchoServer, self).listen()
-        coroutine.run()
-
-    async def handle_connection(self, stream, address):
+    async def handle_stream(self, stream, address):
         logging.info("Accepted connection: {}".format(address))
         try:
             while True:
@@ -32,5 +27,7 @@ class EchoServer(SocketAcceptor):
 if __name__ == '__main__':
 
     logging.basicConfig(level=logging.INFO)
-    echo_server = EchoServer(22077)
-    echo_server.listen()
+
+    echo_server = EchoServer()
+    echo_server.bind(22077, '127.0.0.1')
+    echo_server.start()

@@ -29,8 +29,10 @@ def format_address(addr):
     if isinstance(addr, (tuple, list)):
         if len(addr) == 2:
             result = "{}:{}".format(*addr)
-        if len(addr) == 4:
+        elif len(addr) == 4:
             result = "[{}]:{}".format(*addr[:2])
+        elif len(addr) == 1:
+            result = str(addr[0])
     return result
 
 

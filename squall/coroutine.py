@@ -11,8 +11,8 @@ try:
     from squall import _squall as dispatcher
     from squall._squall import READ, WRITE, ERROR, TIMEOUT
 except ImportError:
-    from squall import _tornado as dispatcher
-    from squall._tornado import READ, WRITE, ERROR, TIMEOUT  # noqa
+    from squall._failback import dispatcher
+    from squall._failback.dispatcher import READ, WRITE, ERROR, TIMEOUT  # noqa
 
 logger = logging.getLogger(__name__)
 

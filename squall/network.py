@@ -5,6 +5,7 @@ for building asynchronous network applications.
 import errno
 import socket
 import logging
+from signal import SIGINT, SIGTERM
 
 from squall import coroutine
 from squall.coroutine import ERROR, READ, WRITE, TIMEOUT  # noqa
@@ -14,10 +15,11 @@ from squall.utility import format_address, bind_sockets, bind_unix_socket  # noq
 try:
     from squall._squall import SocketAutoBuffer
 except ImportError:
-    from squall._autobuff import SocketAutoBuffer  # noqa
+    from squall._failback.autobuff import SocketAutoBuffer  # noqa
 
 
 logger = logging.getLogger(__name__)
+SIGNAL = dispatcher.SIGNAL
 
 
 class IOStream(object):
@@ -145,10 +147,11 @@ class SocketAcceptor(object):
 
     def __init__(self, sockets,
                  connection_handler,
-                 stream_factory=None):
+                 stream_factory=None,
+                 close_socket=True):
         self._sockets = sockets
         self._listeners = list()
-        self._close_socket = True
+        self._close_socket = close_socket
         self.connection_handler = connection_handler
         self.stream_factory = (stream_factory or
                                (lambda socket_: SocketStream(socket_)))
@@ -206,10 +209,113 @@ class SocketAcceptor(object):
             self._listeners.append(coroutine.spawn(self._listener, socket_))
         return len(self._listeners) > 0
 
-    def close(self, close_socket=True):
+    def close(self):
         """ Closes listener.
         """
-        self._close_socket = close_socket
         for listener in tuple(self._listeners):
             listener.close()
         self._listeners.clear()
+
+
+class SocketServer(object):
+
+    """ Asynchronous socket server.
+    """
+    def __init__(self):
+        self._started = False
+        self.__restarting = False
+        self._bind_options = dict()
+
+    @property
+    def started(self):
+        """ Returns `True` if server is started. """
+        return self._started
+
+    def bind(self, port, address=None, **kwargs):
+        """ Binds socket with given parameters.
+        """
+        if isinstance(port, str):
+            args = (port, )
+            options = dict(mode=kwargs.get('mode', 0o600),
+                           backlog=kwargs.get('backlog', 128))
+        elif isinstance(port, int):
+            args = (port, address)
+            options = dict(family=kwargs.get('family', socket.AF_UNSPEC),
+                           reuse_port=kwargs.get('reuse_port', False),
+                           backlog=kwargs.get('backlog', 128),
+                           flags=kwargs.get('flags'))
+        else:
+            raise ValueError("'port' has incorrect type")
+        if args in self._bind_options:
+            raise RuntimeError("Socket with given parameters already bind")
+        self._bind_options[args] = options
+        if self.started:
+            self.__restarting = True
+            self.stop()
+
+    def unbind(self, port, address=None):
+        """ Unbinds socket with given parameters.
+        """
+        if isinstance(port, str):
+            args = (port, )
+        elif isinstance(port, int):
+            args = (port, address)
+        else:
+            raise ValueError("'port' has incorrect type")
+
+        if args in self._bind_options:
+            self._bind_options.pop(args)
+            if self.started:
+                self.__restarting = True
+                self.stop()
+
+    def start(self):
+        """ Starts server.
+        """
+        if self.started:
+            raise RuntimeError("Server has already started")
+        while True:
+            dispatcher.release_watching(self._event_handler)
+            acceptors = dict()
+            for args, options in self._bind_options.items():
+                if len(args) == 2:
+                    sockets = bind_sockets(*args, **options)
+                else:
+                    sockets = bind_unix_socket(*args, **options)
+                acceptors[args] = SocketAcceptor(sockets,
+                                                 self._stream_handler,
+                                                 self._stream_factory)
+            for args, acceptor in tuple(acceptors.items()):
+                if not acceptor.listen():
+                    logging.warning("cannot start listener for: %s",
+                                    format_address(args))
+                    acceptors.pop(args)
+            if len(acceptors) == 0:
+                raise RuntimeError("Cannot start server")
+            dispatcher.setup_wait_signal(self._event_handler, SIGINT)
+            dispatcher.setup_wait_signal(self._event_handler, SIGTERM)
+            self._started = True
+            dispatcher.start()
+            self._started = False
+            for args, acceptor in tuple(acceptors.items()):
+                acceptor.close()
+            if self.__restarting:
+                self.__restarting = False
+                continue
+            break
+
+    def stop(self):
+        """ Stops server
+        """
+        if self.started:
+            dispatcher.stop()
+
+    def _event_handler(self, revents, payload):
+        if revents == SIGNAL and payload in (SIGINT, SIGTERM):
+            self.stop()
+
+    def _stream_factory(self, socket_):
+        return SocketStream(socket_)
+
+    async def _stream_handler(self, stream, address):
+        raise NotImplementedError

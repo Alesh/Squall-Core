@@ -2,15 +2,12 @@ import os
 import time
 import os.path
 import tempfile
+from squall.coroutine import dispatcher
 
-try:
-    from squall._squall import start, stop, setup_wait
-    from squall._squall import CLEANUP, TIMEOUT, READ, WRITE
-    from squall._squall import setup_wait_io, release_watching
-except ImportError:
-    from squall._tornado import start, stop, setup_wait
-    from squall._tornado import CLEANUP, TIMEOUT, READ, WRITE
-    from squall._tornado import setup_wait_io, release_watching
+CLEANUP = dispatcher.CLEANUP
+TIMEOUT = dispatcher.TIMEOUT
+READ = dispatcher.READ
+WRITE = dispatcher.WRITE
 
 
 def test_setup_wait():
@@ -30,16 +27,16 @@ def test_setup_wait():
         result.append((0.21, revents))
         calls.append(True)
         if len(calls) == 1:
-            release_watching(callback15)
+            dispatcher.release_watching(callback15)
             return True
         else:
-            stop()
+            dispatcher.stop()
 
-    setup_wait(callback01, 0.1)
-    setup_wait(callback15, 0.151)
-    setup_wait(callback02, 0.21)
+    dispatcher.setup_wait(callback01, 0.1)
+    dispatcher.setup_wait(callback15, 0.151)
+    dispatcher.setup_wait(callback02, 0.21)
 
-    start()
+    dispatcher.start()
 
     assert result == [(0.1, TIMEOUT), (0.151, TIMEOUT), (0.1, TIMEOUT),
                       (0.21, TIMEOUT), (0.1, TIMEOUT), (0.1, TIMEOUT),
@@ -62,11 +59,11 @@ def test_exception():
             raise RuntimeError("EXC")
         return True
 
-    setup_wait(callback01, 0.1)
-    setup_wait(callback15, 0.151)
+    dispatcher.setup_wait(callback01, 0.1)
+    dispatcher.setup_wait(callback15, 0.151)
 
     try:
-        start()
+        dispatcher.start()
     except RuntimeError as exc:
         result.append(str(exc))
 
@@ -94,7 +91,7 @@ def test_setup_wait_io():
         if len(call) == 1:
             os.write(in_fifo, b'AAA')
         elif len(call) == 2:
-            stop()
+            dispatcher.stop()
         return True
 
     def callbackIN(revents, payload):
@@ -107,12 +104,12 @@ def test_setup_wait_io():
         return True
 
     try:
-        setup_wait(callback01, 0.1)
-        setup_wait(callback15, 0.151)
-        setup_wait_io(callbackIN, in_fifo, WRITE)
-        setup_wait_io(callbackOUT, out_fifo, READ)
+        dispatcher.setup_wait(callback01, 0.1)
+        dispatcher.setup_wait(callback15, 0.151)
+        dispatcher.setup_wait_io(callbackIN, in_fifo, WRITE)
+        dispatcher.setup_wait_io(callbackOUT, out_fifo, READ)
 
-        start()
+        dispatcher.start()
     finally:
         os.close(in_fifo)
         os.close(out_fifo)
@@ -148,21 +145,21 @@ def test_multiwatchers():
         stamp = round(time.time() - start_at, 2)
         if revents == WRITE:
             stamp = (stamp, payload)
-            setup_wait_io(callback, payload, READ)
+            dispatcher.setup_wait_io(callback, payload, READ)
         elif revents == READ:
             stamp = (stamp, payload, os.read(fifoA, 1024))
         else:
             os.write(fifoA, b'A')
-            setup_wait_io(callback, fifoB, WRITE)
+            dispatcher.setup_wait_io(callback, fifoB, WRITE)
         result.append((stamp, revents))
         return True
 
     try:
-        setup_wait(callback, 0.1)
-        setup_wait(callback, 0.15)
-        setup_wait_io(callback, fifoA, WRITE)
-        setup_wait(lambda *args: stop(), 0.31)
-        start()
+        dispatcher.setup_wait(callback, 0.1)
+        dispatcher.setup_wait(callback, 0.15)
+        dispatcher.setup_wait_io(callback, fifoA, WRITE)
+        dispatcher.setup_wait(lambda *args: dispatcher.stop(), 0.31)
+        dispatcher.start()
     finally:
         os.unlink(tempnameA)
         os.unlink(tempnameB)
