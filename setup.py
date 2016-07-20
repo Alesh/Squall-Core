@@ -22,6 +22,8 @@ settings = {
     'py_modules': ['squall.coroutine',
                    'squall.network',
                    'squall.utility'],
+    'packages': ['squall._failback',
+                 'squall.scgi'],
     'author': "Alexey Poryadin",
     'author_email': "alexey.poryadin@gmail.com",
     'description': "The Squall is the nano-framework that"
@@ -47,6 +49,5 @@ except:
     print("WARNING! Cannot build C extension for event dispatching, "
           "will be used failback module.\n\n")
     del settings['ext_modules']
-    settings['py_modules'].append('squall._tornado')
     settings['install_requires'].append('tornado >= 4.3')
     setup(**settings)
