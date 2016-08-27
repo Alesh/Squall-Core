@@ -77,7 +77,7 @@ def test__SwitchBack_ERROR_CLEANUP():
     def test():
         def setup_test(ctx):
             switch_back[0] = ctx
-            return True
+            # return True ### side effect, to do
         return _SwitchBack(setup_test)
 
     async def corofunc01():
@@ -140,6 +140,7 @@ def test_ready_and_close():
         try:
             while True:
                 try:
+                    start_at = time()
                     await wait_io(fifo, READ, timeout=0.31)
                     data = os.read(fifo, 1024)
                     result.append(data)

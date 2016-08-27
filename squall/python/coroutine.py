@@ -18,6 +18,14 @@ dispatcher = _squall.Dispatcher.current()
 logger = logging.getLogger(__name__)
 
 
+class Error(Exception):
+    """ Base error. """
+
+
+class CannotSetupWatcher(Error):
+    """ Cannot setup watcher error. """
+
+
 class _SwitchBack(object):
 
     """ Makes the future-like object that will ensure execution
@@ -58,8 +66,15 @@ class _SwitchBack(object):
         """ Makes awaitable, called from a coroutine.
         """
         cls = self.__class__
-        if not self._setup(self, *self._args, **self._kwargs):
-            raise RuntimeError("Cannot setup watcher")
+        try:
+            result = self._setup(self, *self._args, **self._kwargs)
+            if result is not None:
+                return result
+        except RuntimeError as exc:
+            if dispatcher.active:
+                raise exc
+            else:
+                raise GeneratorExit
         try:
             cls._current.popleft()
             revents, payload = yield
@@ -101,7 +116,7 @@ def start():
 def stop():
     """ Stops event dispatching.
     """
-    dispatcher.watch_timer(lambda *args: dispatcher.stop(), 0)
+    dispatcher.stop()
 
 
 def current():
@@ -137,10 +152,9 @@ def wait_io(fd, mode, *, timeout=None):
 
     # setup I/O ready and timeout both
     def watch_io(target, fd, mode, timeout):
-        result = dispatcher.watch_io(target, fd, mode)
-        if result and timeout > 0:
-            result = dispatcher.watch_timer(target, timeout)
-        return result
+        dispatcher.watch_io(target, fd, mode)
+        if timeout > 0:
+            dispatcher.watch_timer(target, timeout)
     return _SwitchBack(watch_io, fd, mode, timeout=float(timeout or 0))
 
 

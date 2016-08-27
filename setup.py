@@ -1,12 +1,13 @@
 import sys
 from setuptools import setup, Extension
 
+
 if sys.version_info[:2] < (3, 5):
     raise NotImplementedError("Required python version 3.5 or greater")
 
 settings = {
     'name': 'squall',
-    'version': '0.3.dev0',
+    'version': '0.3.dev1',
     'namespace_packages': ['squall'],
     'package_dir': {'squall': './squall/python'},
     'py_modules': ['squall.coroutine',
@@ -17,15 +18,16 @@ settings = {
     'description': "The Squall is the nano-framework that"
                    " implements cooperative event-driven"
                    " concurrency and asynchronous networking.",
-    'install_requires': [],
-    'packages': [],
+    'install_requires': list(),
+    'packages': list(),
 }
+
 
 settings['ext_modules'] = [
     Extension('_squall', **{
               'extra_compile_args': ['-std=c++11'],
               'include_dirs': ['./'],
-              'sources': ['./squall/python/_squall/!module.cxx'],
+              'sources': ['./squall/python/_squall/module.cxx'],
               'libraries': ['ev', 'boost_python-py35']})
 ]
 

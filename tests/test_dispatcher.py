@@ -5,7 +5,7 @@ import tempfile
 
 import _squall
 
-dispatcher = _squall.Dispatcher()
+dispatcher = _squall.Dispatcher.current()
 CLEANUP = dispatcher.CLEANUP
 TIMEOUT = dispatcher.TIMER
 READ = dispatcher.READ
@@ -150,7 +150,7 @@ def test_multiwatchers():
             dispatcher.watch_io(callback, payload, READ)
         elif revents == READ:
             stamp = (stamp, payload, os.read(fifoA, 1024))
-        else:
+        elif revents == TIMEOUT:
             os.write(fifoA, b'A')
             dispatcher.watch_io(callback, fifoB, WRITE)
         result.append((stamp, revents))

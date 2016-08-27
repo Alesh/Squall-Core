@@ -121,6 +121,6 @@ async def echo_acceptor(socket_):
 if __name__ == '__main__':
 
     logging.basicConfig(level=logging.INFO)
-    for socket_ in bind_sockets(22077, backlog=128):
+    for socket_ in bind_sockets(22077, "127.0.0.1", backlog=128):
         coroutine.spawn(echo_acceptor, socket_)
     coroutine.run()

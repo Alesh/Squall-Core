@@ -3,19 +3,23 @@
 
 #include <boost/python.hpp>
 #include <squall/Dispatcher.hxx>
+#include <squall/Loop.hxx>
+
+namespace bp = boost::python;
 
 
-namespace sq {
+namespace squall {
+namespace python {
 
 using std::placeholders::_1;
 using std::placeholders::_2;
 using std::placeholders::_3;
 
-namespace bp = boost::python;
 
 /* Specialized event dispatcher. */
-class Dispatcher : squall::Dispatcher<PyObject> {
+class Dispatcher : public squall::Dispatcher<PyObject> {
 
+    bool m_active = false;
     PyObject *exc_type, *exc_value, *exc_traceback;
 
     bool on_event(const PyObject &target, int revents, const void *payload) {
@@ -48,13 +52,17 @@ class Dispatcher : squall::Dispatcher<PyObject> {
         }
     }
 
-  public:
-    Dispatcher()
-        : squall::Dispatcher<PyObject>(ev::default_loop(), std::bind(&Dispatcher::on_event, this, _1, _2, _3),
+  protected:
+    /* Protected constructor */
+    Dispatcher(const Loop &loop = Loop::current())
+        : squall::Dispatcher<PyObject>(std::bind(&Dispatcher::on_event, this, _1, _2, _3),
                                        std::bind(&Dispatcher::on_apply, this, _1),
-                                       std::bind(&Dispatcher::on_free, this, _1)),
+                                       std::bind(&Dispatcher::on_free, this, _1), loop),
           exc_type(nullptr), exc_value(nullptr), exc_traceback(nullptr) {}
 
+
+  public:
+    /* Returns thread local event dispatcher instance. */
     static Dispatcher &current() {
         static Dispatcher instance;
         return instance;
@@ -62,7 +70,9 @@ class Dispatcher : squall::Dispatcher<PyObject> {
 
     void start() {
         exc_type = exc_value = exc_traceback = nullptr;
-        squall::Dispatcher<PyObject>::start();
+        m_active = true;
+        Loop::current().start();
+        m_active = false;
         squall::Dispatcher<PyObject>::cleanup();
         if (exc_type != nullptr) {
             PyErr_Restore(exc_type, exc_value, exc_traceback);
@@ -71,19 +81,22 @@ class Dispatcher : squall::Dispatcher<PyObject> {
     }
 
     void stop() {
-        squall::Dispatcher<PyObject>::stop();
+        Loop::current().stop();
     }
 
-    bool watch_timer(PyObject *target, double timeout) {
-        return squall::Dispatcher<PyObject>::watch_timer(*target, timeout);
+    void watch_timer(PyObject *target, double timeout) {
+        if (!squall::Dispatcher<PyObject>::watch_timer(*target, timeout))
+            throw std::runtime_error("Cannot setup timer watcher");
     }
 
-    bool watch_io(PyObject *target, int fd, int events) {
-        return squall::Dispatcher<PyObject>::watch_io(*target, fd, events);
+    void watch_io(PyObject *target, int fd, int events) {
+        if (!squall::Dispatcher<PyObject>::watch_io(*target, fd, events))
+            throw std::runtime_error("Cannot setup I/O watcher");
     }
 
-    bool watch_signal(PyObject *target, int signum) {
-        return squall::Dispatcher<PyObject>::watch_signal(*target, signum);
+    void watch_signal(PyObject *target, int signum) {
+        if (!squall::Dispatcher<PyObject>::watch_signal(*target, signum))
+            throw std::runtime_error("Cannot setup signal watcher");
     }
 
     bool disable_watching(PyObject *target) {
@@ -93,7 +106,11 @@ class Dispatcher : squall::Dispatcher<PyObject> {
     bool release_watching(PyObject *target) {
         return squall::Dispatcher<PyObject>::release_watching(*target);
     }
-};
 
+    bool is_active() const {
+        return (m_active && (!is_cleaning()));
+    }
+};
+}
 }
 #endif
