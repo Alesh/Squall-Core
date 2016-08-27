@@ -1,0 +1,11 @@
+BasedOnStyle: LLVM
+
+AllowShortFunctionsOnASingleLine: Empty
+AlwaysBreakTemplateDeclarations: 'true'
+AccessModifierOffset: -2
+MaxEmptyLinesToKeep: 2
+ColumnLimit: 120
+Standard: Cpp11
+IndentWidth: 4
+UseTab: Never
+

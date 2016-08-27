@@ -1,32 +1,29 @@
 """
 Implementation of event-driven async/await coroutine switching.
 """
+import os
 import errno
 import logging
-
 from collections import deque
 from signal import SIGINT, SIGTERM
+import _squall
 
-try:
-    from squall import _squall as dispatcher
-    from squall._squall import READ, WRITE, ERROR, TIMEOUT
-except ImportError:
-    from squall._failback import dispatcher
-    from squall._failback.dispatcher import READ, WRITE, ERROR, TIMEOUT  # noqa
+READ = _squall.Dispatcher.READ
+WRITE = _squall.Dispatcher.WRITE
+ERROR = _squall.Dispatcher.ERROR
+TIMEOUT = _squall.Dispatcher.TIMER
+SIGNAL = _squall.Dispatcher.SIGNAL
+dispatcher = _squall.Dispatcher.current()
 
 logger = logging.getLogger(__name__)
 
 
 class _SwitchBack(object):
 
-    """ Makes future-like object that will ensure the execution return back
-    to the coroutine when the awaited event occurs. One coroutine - one object
-    this class for the entire coroutine lifetime.
-
-    :param callable setup: Callable, which sets the event dispatcher
-        to notify if awaited events occurred. ``*args``, ``**kwargs``
-        it its parameters.
+    """ Makes the future-like object that will ensure execution
+    return back to a coroutine when awaited event occurs.
     """
+
     _all = dict()
     _current = deque()
 
@@ -61,7 +58,8 @@ class _SwitchBack(object):
         """ Makes awaitable, called from a coroutine.
         """
         cls = self.__class__
-        self._setup(self, *self._args, **self._kwargs)
+        if not self._setup(self, *self._args, **self._kwargs):
+            raise RuntimeError("Cannot setup watcher")
         try:
             cls._current.popleft()
             revents, payload = yield
@@ -69,17 +67,19 @@ class _SwitchBack(object):
             # exception while coroutine waiting
             self.__release()
             return
-
-        if revents == dispatcher.TIMEOUT and 'timeout' in self._kwargs:
+        if revents == TIMEOUT and 'timeout' in self._kwargs:
             raise TimeoutError(errno.ETIMEDOUT, "Connection timed out")
         elif revents == dispatcher.CLEANUP:
             raise GeneratorExit
         elif revents == dispatcher.ERROR:
             if payload is not None:
-                raise payload
+                if isinstance(payload, int):
+                    if payload in errno.errorcode:
+                        raise IOError(payload, os.strerror(payload))
+                else:
+                    raise payload
             else:
                 raise IOError(errno.EIO, "Undefined event loop error")
-
         return payload if payload is not None else revents
 
     def __release(self):
@@ -101,7 +101,7 @@ def start():
 def stop():
     """ Stops event dispatching.
     """
-    dispatcher.setup_wait(lambda *args: dispatcher.stop(), 0)
+    dispatcher.watch_timer(lambda *args: dispatcher.stop(), 0)
 
 
 def current():
@@ -111,7 +111,7 @@ def current():
 
 
 def spawn(corofunc, *args, **kwargs):
-    """ Creates, starts and returns coroutine based on given ``corofunc``.
+    """ Creates, starts and returns the coroutine based on a ``corofunc``.
     """
     coro = corofunc(*args, **kwargs)
     _SwitchBack._current.appendleft(coro)
@@ -120,17 +120,15 @@ def spawn(corofunc, *args, **kwargs):
 
 
 def sleep(timeout=None):
-    """ Freezes current coroutine until ``timeout`` elapsed.
+    """ Freezes a current coroutine until ``timeout`` elapsed.
     """
     assert ((isinstance(timeout, (int, float)) and
             timeout >= 0) or timeout is None)
-    return _SwitchBack(dispatcher.setup_wait, float(timeout or 0))
+    return _SwitchBack(dispatcher.watch_timer, float(timeout or 0))
 
 
-def ready(fd, mode, *, timeout=None):
-    """ Freezes the current coroutine until I/O device is ready.
-    ``fd`` and ``mode`` defines device and expected events:
-    ``READ`` and/or ``WRITE``.
+def wait_io(fd, mode, *, timeout=None):
+    """ Freezes a current coroutine until I/O device is ready.
     """
     assert isinstance(fd, int) and fd >= 0
     assert mode in (READ, WRITE, READ | WRITE)
@@ -138,25 +136,26 @@ def ready(fd, mode, *, timeout=None):
             timeout >= 0) or timeout is None)
 
     # setup I/O ready and timeout both
-    def setup_ready(target, fd, mode, timeout):
-        dispatcher.setup_wait_io(target, fd, mode)
-        if timeout > 0:
-            dispatcher.setup_wait(target, timeout)
-    return _SwitchBack(setup_ready, fd, mode, timeout=float(timeout or 0))
+    def watch_io(target, fd, mode, timeout):
+        result = dispatcher.watch_io(target, fd, mode)
+        if result and timeout > 0:
+            result = dispatcher.watch_timer(target, timeout)
+        return result
+    return _SwitchBack(watch_io, fd, mode, timeout=float(timeout or 0))
 
 
-def signal(signum):
-    """ Freezes the current coroutine until system signal with given ``signum``
+def wait_signal(signum):
+    """ Freezes a current coroutine until received signal with ``signum``..
     """
     assert isinstance(signum, int) and signum > 0 and signum <= 64
-    return _SwitchBack(dispatcher.setup_wait_signal, signum)
+    return _SwitchBack(dispatcher.watch_signal, signum)
 
 
 def run(on_stop=None):
-    """ Runs the event dispatching until SIGINT or SIGTERM.
+    """ Runs the event dispatching until `SIGINT` or `SIGTERM`.
     """
     async def terminator(signum):
-        await signal(signum)
+        await wait_signal(signum)
         if on_stop is None:
             stop()
         else:

@@ -1,5 +1,4 @@
 ~*
-*.so
 .env
 .st3
 build

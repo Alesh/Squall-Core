@@ -1,5 +1,5 @@
 from signal import SIGINT
-from squall.coroutine import sleep, signal, spawn
+from squall.coroutine import sleep, wait_signal, spawn
 import squall.coroutine
 
 async def hello(name, seconds):
@@ -9,7 +9,7 @@ async def hello(name, seconds):
 
 
 async def terminator(signum):
-    await signal(signum)
+    await wait_signal(signum)
     squall.coroutine.stop()
     print("Bye!")
 

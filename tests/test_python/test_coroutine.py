@@ -4,7 +4,7 @@ import tempfile
 from time import time
 from squall.coroutine import dispatcher
 from squall.coroutine import start, stop, spawn
-from squall.coroutine import sleep, ready, _SwitchBack
+from squall.coroutine import sleep, wait_io, _SwitchBack
 from squall.coroutine import ERROR, READ, WRITE
 
 CLEANUP = dispatcher.CLEANUP
@@ -77,6 +77,7 @@ def test__SwitchBack_ERROR_CLEANUP():
     def test():
         def setup_test(ctx):
             switch_back[0] = ctx
+            return True
         return _SwitchBack(setup_test)
 
     async def corofunc01():
@@ -102,11 +103,11 @@ def test__SwitchBack_ERROR_CLEANUP():
 
     spawn(corofunc01)
     spawn(corofuncSW, 'A')
-    dispatcher.setup_wait(lambda event, _: switch_back[0](event), 0.11)
-    dispatcher.setup_wait(lambda event, _: switch_back[0](ERROR), 0.21)
-    dispatcher.setup_wait(lambda event, _: switch_back[0](event), 0.31)
-    dispatcher.setup_wait(lambda event, _: switch_back[0](CLEANUP), 0.51)
-    dispatcher.setup_wait(lambda event, _: stop(), 0.61)
+    dispatcher.watch_timer(lambda event, _: switch_back[0](event), 0.11)
+    dispatcher.watch_timer(lambda event, _: switch_back[0](ERROR), 0.21)
+    dispatcher.watch_timer(lambda event, _: switch_back[0](event), 0.31)
+    dispatcher.watch_timer(lambda event, _: switch_back[0](CLEANUP), 0.51)
+    dispatcher.watch_timer(lambda event, _: stop(), 0.61)
     start()
 
     assert result == ['<<', '<<A', '*', 256, '*', 'ERR',
@@ -124,7 +125,7 @@ def test_ready_and_close():
     async def corofuncTX(fifo):
         result.append('<TX')
         try:
-            await ready(fifo, WRITE)
+            await wait_io(fifo, WRITE)
             await sleep(0.11)
             os.write(fifo, b'AAA')
             await sleep(0.41)
@@ -139,7 +140,7 @@ def test_ready_and_close():
         try:
             while True:
                 try:
-                    await ready(fifo, READ, timeout=0.31)
+                    await wait_io(fifo, READ, timeout=0.31)
                     data = os.read(fifo, 1024)
                     result.append(data)
                     if data == b'BBB':
@@ -182,7 +183,7 @@ def test_ready_and_close2():
     async def corofuncTX(fifo):
         result.append('<TX')
         try:
-            await ready(fifo, WRITE)
+            await wait_io(fifo, WRITE)
             await sleep(0.1)
             os.write(fifo, b'AAA')
             await sleep(0.41)
@@ -197,7 +198,7 @@ def test_ready_and_close2():
         try:
             while True:
                 try:
-                    await ready(fifo, READ, timeout=0.3)
+                    await wait_io(fifo, READ, timeout=0.3)
                     data = os.read(fifo, 1024)
                     result.append(data)
                     if data == b'BBB':
