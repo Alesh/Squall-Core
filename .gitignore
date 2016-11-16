@@ -1,0 +1,8 @@
+~*
+.env
+.st3
+*.so
+.eggs/*
+build/*
+*.egg-info
+__pycache__
