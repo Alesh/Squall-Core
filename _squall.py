@@ -108,7 +108,7 @@ class EventDispatcher(abc.EventDispatcher):
                     io_cancel = None
                     self.cancel(callback)
                 renew = callback(revents) and not once
-                if callback not in self._cancels:
+                if io_cancel is not None and callback not in self._cancels:
                     io_cancel()
                 if renew:
                     if (not self._cleanup and callback in self._cancels and

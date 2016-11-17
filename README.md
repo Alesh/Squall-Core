@@ -6,10 +6,9 @@ based on event-driven switching async/await coroutines.
 
 #### This is contains several components (modules) ####
 
+ * **squall.abc** -- Abstract base classes and interfaces.
  * **_squall** -- Low-level event dispatcher and I/O autobuffer designed
    for use with a callback functions.
- * **squall.abc** -- Abstract base classes.
- * **squall.coroutine** -- Basic awaitables and event dispatcher designed
-   for use with an **async/await** coroutines described in the PEP492.
- * **squall.network** -- Implementation of async network primitives based
-   on **async/await** coroutines.
+ * **squall.coroutine** -- Implementation of event-driven coroutine switching.
+ * **squall.network** -- Implementation of the network primitives used
+   coroutines for async I/O.

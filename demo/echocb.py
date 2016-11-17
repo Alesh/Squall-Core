@@ -2,7 +2,7 @@ import sys
 import socket
 import logging
 from functools import partial
-from tornado.netutil import bind_sockets
+from squall.network import bind_sockets
 from squall.coroutine import EventDispatcher
 
 
@@ -31,7 +31,7 @@ def echo_acceptor(event_disp, socket_, revents):
 
 def echo_server(port):
     event_disp = EventDispatcher()
-    for listen_socket in bind_sockets(port, backlog=128, reuse_port=True):
+    for listen_socket in bind_sockets(port, 'localhost'):
         listen_socket.setblocking(0)
         callback = partial(echo_acceptor, event_disp, listen_socket)
         event_disp.watch_io(callback, listen_socket.fileno(), event_disp.READ)

@@ -1,5 +1,5 @@
 """
-Abstract base classes.
+Abstract base classes and interfaces.
 """
 from abc import ABCMeta, abstractmethod
 
