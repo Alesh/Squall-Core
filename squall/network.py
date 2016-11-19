@@ -8,6 +8,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# utility functions
+
+
 def bind_sockets(port, address=None, *,
                  family=socket.AF_UNSPEC,
                  backlog=128, flags=socket.AI_PASSIVE):

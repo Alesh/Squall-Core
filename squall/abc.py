@@ -87,3 +87,67 @@ class EventDispatcher(metaclass=ABCMeta):
     def cancel(self, callback):
         """ Cancels all watchings for a given `callback`.
         """
+
+
+class AutoBuffer(metaclass=ABCMeta):
+    """ Event-driven read-write I/O autobuffer.
+    """
+
+    @property
+    @abstractmethod
+    def block_size(self):
+        """ The block size of data reads / writes to the I/O device at once.
+        must be int(block_size / 64) == block_size / 64
+        and strongly recommended block_size <= 64 * 1024
+        """
+
+    @property
+    @abstractmethod
+    def max_size(self):
+        """ Maximum size of the incoming / outcoming data buffers.
+        must be int(max_size / block_size) == max_size / block_size
+        """
+
+    @property
+    @abstractmethod
+    def closed(self):
+        """ Returns `True` if this is released.
+        """
+
+    @abstractmethod
+    def watch_read_bytes(self, callback, number):
+        """ Sets an autobuffer to call `callback` with code `READ`
+        and result as block of bytes when autobuffer received given
+        `number` of bytes.
+        """
+
+    @abstractmethod
+    def watch_read_until(self, callback, delimiter, max_number):
+        """ Sets an autobuffer to call `callback` with code `READ`
+        and result as block of bytes when autobuffer received given
+        `delimiter` or `number` of bytes, `delimiter` would be
+        included in result.
+        """
+
+    @abstractmethod
+    def watch_flush(self, callback):
+        """ Sets an autobuffer to call `callback` with code `WRITE`
+        when a autobuffer will complete drain outcoming buffer.
+        """
+
+    @abstractmethod
+    def write(self, data):
+        """ Puts `data` bytes to outcoming buffer to asynchronous
+        sending. Returns the number of bytes written.
+        """
+        return self._autobuff.write(data)
+
+    @abstractmethod
+    def cancel(self):
+        """ Cancels all watchings.
+        """
+
+    @abstractmethod
+    def release(self):
+        """ Cancels all watchings and destroys internal buffers.
+        """
