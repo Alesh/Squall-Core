@@ -55,6 +55,10 @@ class MockAutoBuffer(abc.AutoBuffer):
     def max_size(self):
         return self._max_size
 
+    @property
+    def last_error(self):
+        return None
+
     def watch_read_bytes(self, callback, number):
         self.callog.append(('watch_read_bytes', callback, number))
         return not self._closed
@@ -144,15 +148,20 @@ class TestIOStream(unittest.TestCase):
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, stream.buffer_size),
             ('callback', self.ev.READ, b'READ_BYTES'),
+            ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
             ('watch_read_until', callback02, b'\r\n', stream.buffer_size),
             ('callback', self.ev.READ, b'READ_UNTIL'),
+            ('cancel', callback02),
+            ('buff:cancel',),
             ('sample:return_value', b'READ_UNTIL'),
             ('write', b'TEST'),
             ('watch_timer', callback03, 7.0),
             ('watch_flush', callback03),
             ('callback', self.ev.WRITE),
+            ('cancel', callback03),
+            ('buff:cancel',),
             ('sample:return_value', self.ev.WRITE)])
 
         self.assertFalse(stream.closed)
@@ -180,6 +189,7 @@ class TestIOStream(unittest.TestCase):
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, 4*1024),
             ('callback', self.ev.READ, b'READ_BYTES'),
+            ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
             ('watch_read_until', callback02, b'\r\n', 49920),
@@ -214,6 +224,7 @@ class TestIOStream(unittest.TestCase):
             ('watch_read_bytes', callback01, 4096),
             ('buff:release',),
             ('callback', self.ev.READ, b'READ_BYTES'),
+            ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
             ('watch_read_until', callback02, b'\r\n', 49920),
@@ -256,15 +267,20 @@ class TestIOStream(unittest.TestCase):
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, 4*1024),
             ('callback', self.ev.READ, b'READ_BYTES'),
+            ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
             ('watch_read_until', callback02, b'\r\n', stream.buffer_size),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback02),
+            ('buff:cancel',),
             ('sample:Exception', TimeoutError),
             ('write', b'TEST'),
             ('watch_timer', callback03, 7.0),
             ('watch_flush', callback03),
             ('callback', self.ev.ERROR, errno.ECONNRESET),
+            ('cancel', callback03),
+            ('buff:cancel',),
             ('sample:Exception', ConnectionResetError)])
 
 

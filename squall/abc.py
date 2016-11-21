@@ -65,20 +65,20 @@ class EventDispatcher(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def watch_timer(self, callback, seconds, once=False):
+    def watch_timer(self, callback, seconds):
         """ Sets an event dispatcher to call `callback` with code `TIMEOUT`
         after a specified time in seconds.
         """
 
     @abstractmethod
-    def watch_io(self, callback, fd, events, once=False):
+    def watch_io(self, callback, fd, events):
         """ Sets an event dispatcher to call `callback` with code `READ`
         and/or `WRITE` when I/O device  with given `fd` will be ready
         for corresponding I/O operations.
         """
 
     @abstractmethod
-    def watch_signal(self, callback, signum, once=False):
+    def watch_signal(self, callback, signum):
         """ Sets an event dispatcher to call `callback` with code `SIGNAL`
         when a systems signal with given `signum` will be received.
         """
@@ -106,6 +106,12 @@ class AutoBuffer(metaclass=ABCMeta):
     def max_size(self):
         """ Maximum size of the incoming / outcoming data buffers.
         must be int(max_size / block_size) == max_size / block_size
+        """
+
+    @property
+    @abstractmethod
+    def last_error(self):
+        """ Returns last occurred error.
         """
 
     @property
@@ -140,7 +146,6 @@ class AutoBuffer(metaclass=ABCMeta):
         """ Puts `data` bytes to outcoming buffer to asynchronous
         sending. Returns the number of bytes written.
         """
-        return self._autobuff.write(data)
 
     @abstractmethod
     def cancel(self):

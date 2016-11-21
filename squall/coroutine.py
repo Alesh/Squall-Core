@@ -92,6 +92,7 @@ class _Awaitable(object):
             raise GeneratorExit
 
     def __call__(self, event, payload=None):
+        self._cancel()
         with self._lock_as_current(self._coro):
             if not event & (self._ev.ERROR | self._ev.CLEANUP):
                 if self._has_timeout and event & self._ev.TIMEOUT:
@@ -148,6 +149,12 @@ class IOStream(object):
         """
         return self._autobuff.max_size
 
+    @property
+    def last_error(self):
+        """ Returns last occurred error.
+        """
+        return self._autobuff.last_error
+
     def read_bytes(self, number, timeout=None):
         """ Returns awaitable which switch back when a autobuffer has
         given `number` of bytes or timeout exceeded if it set.
@@ -169,7 +176,7 @@ class IOStream(object):
         def setup(callback, number, timeout):
             result = True
             if timeout > 0:
-                result = self._event_disp.watch_timer(callback, timeout, True)
+                result = self._event_disp.watch_timer(callback, timeout)
             if result:
                 result = self._autobuff.watch_read_bytes(callback, number)
             if not result:
@@ -189,6 +196,7 @@ class IOStream(object):
         `max_number` of bytes or raises `TimeoutError` or `IOError`.
         """
         assert isinstance(delimiter, bytes)
+        max_number = max_number or 0
         assert isinstance(max_number, int)
         max_number = (max_number
                       if max_number > 0 and max_number <= self.buffer_size
@@ -204,7 +212,7 @@ class IOStream(object):
         def setup(callback, delimiter, max_number, timeout):
             result = True
             if timeout > 0:
-                result = self._event_disp.watch_timer(callback, timeout, True)
+                result = self._event_disp.watch_timer(callback, timeout)
             if result:
                 result = self._autobuff.watch_read_until(callback, delimiter,
                                                          max_number)
@@ -234,7 +242,7 @@ class IOStream(object):
         def setup(callback, timeout):
             result = True
             if timeout > 0:
-                result = self._event_disp.watch_timer(callback, timeout, True)
+                result = self._event_disp.watch_timer(callback, timeout)
             if result:
                 result = self._autobuff.watch_flush(callback)
             if not result:
@@ -249,6 +257,7 @@ class IOStream(object):
     def write(self, data):
         """ Puts `data` bytes to outcoming buffer.
         """
+        assert isinstance(data, bytes)
         return self._autobuff.write(data)
 
     def close(self):
@@ -277,7 +286,7 @@ def spawn(corofunc, *args, **kwargs):
     coro = corofunc(*args, **kwargs)
     with disp._lock_as_current(coro):
         coro.send(None)
-        return coro
+    return coro
 
 
 def current(*, disp=None):
@@ -295,7 +304,7 @@ def sleep(seconds, *, disp=None):
     assert isinstance(seconds, (int, float))
     seconds = seconds if seconds > 0 else 0
     return _Awaitable(disp, disp._event_disp.cancel,
-                      disp._event_disp.watch_timer, seconds, True)
+                      disp._event_disp.watch_timer, seconds)
 
 
 def ready(fd, events, *, timeout=None, disp=None):
@@ -314,9 +323,9 @@ def ready(fd, events, *, timeout=None, disp=None):
     def setup(callback, fd, events, timeout):
         result = True
         if timeout > 0:
-            result = disp._event_disp.watch_timer(callback, timeout, True)
+            result = disp._event_disp.watch_timer(callback, timeout)
         if result:
-            result = disp._event_disp.watch_io(callback, fd, events, True)
+            result = disp._event_disp.watch_io(callback, fd, events)
         if not result:
             disp._event_disp.cance(callback)
         return result
@@ -335,7 +344,7 @@ def signal(self, signum, *, disp=None):
     assert isinstance(disp, Dispatcher)
     assert isinstance(signum, int) and signum > 0
     return _Awaitable(disp, disp._event_disp.cancel,
-                      disp._event_disp.watch_signal, signum, True)
+                      disp._event_disp.watch_signal, signum)
 
 
 # utility functions

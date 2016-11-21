@@ -6,7 +6,7 @@ from squall.coroutine import ready,  READ, WRITE
 from squall.coroutine import start, spawn, timeout_gen
 from squall.network import bind_sockets
 
-logger = logging.getLogger('echoraw.py')
+logger = logging.getLogger('echoco.py')
 
 
 async def echo_handler(connection_socket, address):

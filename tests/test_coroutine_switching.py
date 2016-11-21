@@ -81,12 +81,15 @@ class TestCoroutineSwitching(unittest.TestCase):
             ('sample:awaitable', callback01),
             ('watch_timer', callback01, 2.5),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback01),
             ('sample:return_value', self.ev.TIMEOUT),
             ('watch_timer', callback02, 5.0),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback02),
             ('sample:return_value', self.ev.TIMEOUT),
             ('watch_timer', callback03, 7.0),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback03),
             ('sample:return_value', self.ev.TIMEOUT)
         ])
 
@@ -125,14 +128,17 @@ class TestCoroutineSwitching(unittest.TestCase):
 
             ('watch_timer', callback01, 2.5),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback01),
             ('sample:return_value', self.ev.TIMEOUT),
 
             ('watch_timer', callback02, 5.0),
             ('callback', self.ev.ERROR),
+            ('cancel', callback02),
             ('sample:Exception', OSError),
 
             ('watch_timer', callback03, 7.0),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback03),
             ('sample:return_value', self.ev.TIMEOUT)
         ])
 
@@ -164,8 +170,11 @@ class TestCoroutineSwitching(unittest.TestCase):
             ('sample:awaitable', callback01),
             ('watch_timer', callback01, 2.5),
             ('callback', self.ev.ERROR),
+            ('cancel', callback01),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback02),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback03),
         ])
 
         lc.check(
@@ -221,15 +230,18 @@ class TestCoroutineSwitching(unittest.TestCase):
 
             ('watch_io', callback01, 2, self.ev.READ),
             ('callback', self.ev.READ),
+            ('cancel', callback01),
             ('sample:return_value', self.ev.READ),
 
             ('watch_io', callback02, 5, self.ev.READ),
             ('callback', self.ev.ERROR),
+            ('cancel', callback02),
             ('sample:Exception', OSError),
 
             ('watch_timer', callback03, 7.0),
             ('watch_io', callback03, 7, self.ev.READ),
             ('callback', self.ev.TIMEOUT),
+            ('cancel', callback03),
             ('sample:Exception', TimeoutError),
         ])
 
