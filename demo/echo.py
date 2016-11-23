@@ -1,55 +1,40 @@
 import sys
 import logging
 from squall import coroutine
-from squall.network import bind_sockets, SocketAcceptor, SocketStream
+from squall.network import TCPServer
 
 logger = logging.getLogger('echo.py')
 
 
-class EchoServer(object):
+class EchoServer(TCPServer):
     """ Sample echo server.
     """
-    def __init__(self, port, addr=None, backlog=64):
 
-        def connection_factory(sock, addr):
-            return (SocketStream(sock, 256), addr)
+    def __init__(self):
+        super(EchoServer, self).__init__(256, 0)
+        self.on_listen = lambda addr: logger.info(
+            "{} Established echo listener".format(addr))
+        self.on_finish = lambda addr: logger.info(
+            "{} Finished echo listener".format(addr))
 
-        self._acceptors = dict()
-        for sock in bind_sockets(port, addr, backlog=backlog):
-            acceptor = SocketAcceptor(sock, self.handler,
-                                      connection_factory)
-            acceptor.on_listen = \
-                lambda addr: logger.info("{} Established echo listener"
-                                         "".format(addr))
-            acceptor.on_finish = \
-                lambda addr: logger.info("{} Finished echo listener"
-                                         "".format(addr))
-            self._acceptors[sock] = acceptor
-
-    def listen(self):
-        """ Starts echo server
+    async def handle_stream(self, stream, addr):
+        """ Request handler
         """
-        for acceptor in self._acceptors.values():
-            acceptor.listen()
-        coroutine.start()
-
-    async def handler(self, stream, address):
-        """ Connection handler
-        """
-        logger.info("{} Accepted connection".format(address))
+        logger.info("{} Accepted connection".format(addr))
         try:
             while not stream.closed:
                 data = await stream.read_until(b'\r\n', timeout=15)
                 stream.write(data)
         except IOError as exc:
-            logger.warning("{} Connection fail: {}".format(address, exc))
+            logger.warning("{} Connection fail: {}".format(addr, exc))
         finally:
-            stream.close()
-            logger.info("{} Connection has closed".format(address))
-
+            if not stream.closed:
+                stream.abort()
+            logger.info("{} Connection has closed".format(addr))
 
 if __name__ == '__main__':
 
     logging.basicConfig(level=logging.INFO)
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077
-    EchoServer(port).listen()
+    EchoServer().listen(port)
+    coroutine.start()

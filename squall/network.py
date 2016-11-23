@@ -5,6 +5,7 @@ import os
 import errno
 import socket
 import logging
+from abc import ABCMeta, abstractmethod
 from squall.coroutine import Dispatcher, IOStream, spawn
 from _squall import SocketAutoBuffer
 
@@ -22,11 +23,11 @@ class SocketStream(IOStream):
                                     block_size, max_size)
         super(SocketStream, self).__init__(disp, autobuff)
 
-    def close(self):
-        """ Closes a strean and releases resourses.
+    def abort(self):
+        """ Closes a stream and releases resources immediately.
         """
         try:
-            super(SocketStream, self).close()
+            super(SocketStream, self).abort()
             self._sock.shutdown(socket.SHUT_RDWR)
         finally:
             self._sock.close()
@@ -94,6 +95,49 @@ class SocketAcceptor(object):
         self._sock.close()
         self.on_finish(self._addr)
 
+
+class TCPServer(metaclass=ABCMeta):
+    """ TCP Server
+    """
+
+    def __init__(self, block_size=1024, buffer_size=16384, *, disp=None):
+        self._acceptors = dict()
+        self._block_size = block_size
+        self._buffer_size = buffer_size
+        self._disp = disp or Dispatcher.instance()
+        self.on_listen = lambda addr: None
+        self.on_finish = lambda addr: None
+
+    def _add_acceptors(self, sockets):
+        for sock in sockets:
+            acceptor = SocketAcceptor(sock, self.handle_stream,
+                                      self._connection_factory, disp=self._disp)
+            acceptor.on_listen = self.on_listen
+            acceptor.on_finish = self.on_finish
+            self._acceptors[sock] = acceptor
+            acceptor.listen()
+
+    def _connection_factory(self, sock, addr):
+        return (SocketStream(sock, self._block_size, self._buffer_size), addr)
+
+    def listen(self, port, address=""):
+        """ Starts accepting connections on the given port.
+        """
+        sockets = bind_sockets(port, address=address)
+        self._add_acceptors(sockets)
+
+    def stop(self):
+        """Stops listening for new connections and closes all presents.
+        """
+        for sock, acceptor in tuple(self._acceptors.items()):
+            self._acceptors.pop(sock)
+            acceptor.finish()
+
+    @abstractmethod
+    async def handle_stream(self, stream, addr):
+        """ Should be implemented to handle a async stream
+        from an incoming connection.
+        """
 
 # utility functions
 

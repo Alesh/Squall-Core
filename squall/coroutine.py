@@ -129,6 +129,7 @@ class IOStream(object):
         self._disp = disp
         self._event_disp = disp._event_disp
         self._autobuff = autobuff
+        self._finalize = False
         self._closed = False
 
     @property
@@ -183,6 +184,8 @@ class IOStream(object):
                 cancel(callback)
             return result
 
+        if self._closed:
+            raise ConnectionError("Connection has closed")
         if timeout < 0:
             raise TimeoutError("I/O timed out")
         return _Awaitable(self._disp, cancel,
@@ -220,6 +223,8 @@ class IOStream(object):
                 cancel(callback)
             return result
 
+        if self._closed:
+            raise ConnectionError("Connection has closed")
         if timeout < 0:
             raise TimeoutError("I/O timed out")
         return _Awaitable(self._disp, cancel,
@@ -249,6 +254,8 @@ class IOStream(object):
                 cancel(callback)
             return result
 
+        if self._closed and not self._finalize:
+            raise ConnectionError("Connection has closed")
         if timeout < 0:
             raise TimeoutError("I/O timed out")
         return _Awaitable(self._disp, cancel,
@@ -257,13 +264,24 @@ class IOStream(object):
     def write(self, data):
         """ Puts `data` bytes to outcoming buffer.
         """
+        if self._closed:
+            raise ConnectionError("Connection has closed")
         assert isinstance(data, bytes)
         return self._autobuff.write(data)
 
-    def close(self):
-        """ Closes a strean and releases resourses.
+    async def close(self, timeout=None):
+        """ Closes a stream asynchronously.
         """
+        if self._closed:
+            raise ConnectionError("Connection has closed")
         self._closed = True
+        self._finalize = True
+        await self.flush(timeout=timeout)
+        self.abort()
+
+    def abort(self):
+        """ Closes a stream and releases resources immediately.
+        """
         self._autobuff.release()
 
 
