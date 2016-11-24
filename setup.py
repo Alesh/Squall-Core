@@ -6,7 +6,7 @@ if sys.version_info[:2] < (3, 5):
 
 settings = {
     'name': 'squall',
-    'version': '0.2.dev2',
+    'version': '0.2.dev3',
     'py_modules': ['_squall', 'squall.abc',
                    'squall.coroutine', 'squall.network'],
     'author': "Alexey Poryadin",

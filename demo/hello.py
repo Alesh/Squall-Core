@@ -1,4 +1,4 @@
-from squall.coroutine import start, spawn, sleep
+from squall.coroutine import start, stop, spawn, sleep
 
 
 async def hello(name, timeout):
@@ -14,4 +14,7 @@ if __name__ == '__main__':
 
     spawn(hello, "Alesh", 1.0)
     spawn(hello, "World", 2.5)
-    start()
+    try:
+        start()
+    except KeyboardInterrupt:
+        stop()

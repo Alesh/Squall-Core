@@ -3,7 +3,7 @@ import errno
 import socket
 import logging
 from squall.coroutine import ready,  READ, WRITE
-from squall.coroutine import start, spawn, timeout_gen
+from squall.coroutine import start, stop, spawn, timeout_gen
 from squall.network import bind_sockets
 
 logger = logging.getLogger('echoco.py')
@@ -72,7 +72,10 @@ def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077
     for socket_ in bind_sockets(port, 'localhost'):
         spawn(echo_acceptor, socket_, socket_.getsockname())
-    start()
+    try:
+        start()
+    except KeyboardInterrupt:
+        stop()
 
 
 if __name__ == '__main__':

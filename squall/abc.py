@@ -1,57 +1,124 @@
-"""
-Abstract base classes and interfaces.
-"""
 from abc import ABCMeta, abstractmethod
 
 
-class EventDispatcher(metaclass=ABCMeta):
-    """ Event dispatcher designed for use with a callback functions.
-
-    Important details of implementation watching up (`watch_timer`.
-    `watch_io`. `watch_signal`) functions.
-
-    * If `callback` returns `True` watching will be resumed otherwise no.
-    * Watching up functions can be used for one callback together, but
-      if `once` flag set to `True` all watching will be canceled before
-      call `callback`.
-    * Calling the same function for the second time cancels the settings
-      made in the first call.
+class EventLoop(metaclass=ABCMeta):
+    """ Abstract base class of event loop.
     """
 
     @property
     @abstractmethod
-    def READ(self):
+    def READ(cls):
         """ Event code "I/O device redy to read".
+        This is must be class property!
         """
 
     @property
     @abstractmethod
-    def WRITE(self):
+    def WRITE(cls):
         """ Event code "I/O device redy to write".
+        This is must be class property!
         """
 
     @property
     @abstractmethod
-    def ERROR(self):
-        """ Event code "Event dispatcher internal error"..
+    def ERROR(cls):
+        """ Event code "Event loop internal error".
+        This is must be class property!
         """
 
     @property
     @abstractmethod
-    def TIMEOUT(self):
+    def TIMEOUT(cls):
         """ Event code "Timeout expired".
+        This is must be class property!
         """
 
     @property
     @abstractmethod
-    def SIGNAL(self):
+    def SIGNAL(cls):
         """ Event code "System signal received".
+        This is must be class property!
         """
 
     @property
     @abstractmethod
-    def CLEANUP(self):
-        """ Event code "Event dispatcher has terminated".
+    def CLEANUP(cls):
+        """ Event code "Event dispatching has terminated".
+        This is must be class property!
+        """
+
+    @classmethod
+    @abstractmethod
+    def instance(cls):
+        """ Returns thread local instance.
+        """
+
+    @property
+    @abstractmethod
+    def running(self):
+        """ Returns `True` if event loop is running.
+        """
+
+    @property
+    @abstractmethod
+    def pending(self):
+        """ Number of the pending watchers.
+        """
+
+    @abstractmethod
+    def start(self):
+        """ Starts event loop.
+        """
+
+    @abstractmethod
+    def stop(self):
+        """ Stops event loop.
+        """
+
+    @abstractmethod
+    def watch_timer(self, callback, ctx, seconds):
+        """ Sets an event dispatcher to call `callback` for `ctx`
+        with code `TIMEOUT` after a specified time in seconds.
+        If success returns callable which cancels this watching
+        at call otherwise `None`.
+        """
+
+    @abstractmethod
+    def watch_io(self, callback, ctx, fd, events):
+        """ Sets an event dispatcher to call `callback` for `ctx` 
+        with code `READ` and/or `WRITE` when I/O device  with given
+        `fd` will be ready for corresponding I/O operations.
+        If success returns callable which cancels this watching
+        at call otherwise `None`.
+        """
+
+    @abstractmethod
+    def watch_signal(self, callback, ctx, signum):
+        """ Sets an event dispatcher to call `callback` for `ctx`  
+        with code `SIGNAL` when a systems signal with given `signum`
+        will be received.
+        If success returns callable which cancels this watching
+        at call otherwise `None`.
+        """
+
+
+class EventDispatcher(metaclass=ABCMeta):
+    """ Abstract base class of event dispatcher
+
+    This is designed for use with a callback functions. The watching
+    setup functions (`watch_*`) can be used for one callback together.
+    But if callback returns `False` all watching (all, not only triggered)
+    will be canceled. Calling the same a watching setup function for the
+    second time cancels the settings made in the first call.
+
+    Event dispatcher should be not initialized (bind with event loop) in
+    constructor, do it on demand to support fork.
+    """
+
+    @property
+    @abstractmethod
+    def initialized(self):
+        """ Returns `True` if event dispatcher binded with event loop.
         """
 
     @abstractmethod

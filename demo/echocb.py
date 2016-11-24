@@ -3,11 +3,11 @@ import socket
 import logging
 from functools import partial
 from squall.network import bind_sockets
-from squall.coroutine import EventDispatcher
+from squall.coroutine import EventDispatcher, READ
 
 
 def echo_handler(event_disp, socket_, revents):
-    if revents & event_disp.READ:
+    if revents & READ:
         data = socket_.recv(1024)
         if data:
             socket_.send(data)
@@ -19,11 +19,11 @@ def echo_handler(event_disp, socket_, revents):
 
 
 def echo_acceptor(event_disp, socket_, revents):
-    if revents & event_disp.READ:
+    if revents & READ:
         client_socket, _ = socket_.accept()
         client_socket.setblocking(0)
         callback = partial(echo_handler, event_disp, client_socket)
-        event_disp.watch_io(callback, client_socket.fileno(), event_disp.READ)
+        event_disp.watch_io(callback, client_socket.fileno(), READ)
         return True
     socket_.shutdown(socket.SHUT_RDWR)
     socket_.close()
@@ -34,8 +34,11 @@ def echo_server(port):
     for listen_socket in bind_sockets(port, 'localhost'):
         listen_socket.setblocking(0)
         callback = partial(echo_acceptor, event_disp, listen_socket)
-        event_disp.watch_io(callback, listen_socket.fileno(), event_disp.READ)
-    event_disp.start()
+        event_disp.watch_io(callback, listen_socket.fileno(), READ)
+    try:
+        event_disp.start()
+    except KeyboardInterrupt:
+        event_disp.stop()
 
 if __name__ == '__main__':
 

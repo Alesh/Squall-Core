@@ -2,17 +2,12 @@ import unittest
 from squall import abc
 from testfixtures import LogCapture
 from squall.coroutine import Dispatcher, spawn, sleep, ready
+from squall.coroutine import TIMEOUT, ERROR, READ
 
 
 class MockEventDispatcher(object):
     """
     """
-    READ = 0x001
-    WRITE = 0x002
-    ERROR = 0x0F0
-    TIMEOUT = 0x100
-    CLEANUP = 0x200
-
     def __init__(self, callog):
         self.callog = callog
 
@@ -37,10 +32,7 @@ class TestCoroutineSwitching(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         self.callog = list()
         self.disp = Dispatcher()
-        if hasattr(self.disp._event_disp, '_loop'):
-            self.disp._event_disp._loop.close()
         self.disp._event_disp = MockEventDispatcher(self.callog)
-        self.ev = self.disp._event_disp
         super(TestCoroutineSwitching, self).__init__(*args, **kwargs)
 
     def setUp(self):
@@ -66,31 +58,31 @@ class TestCoroutineSwitching(unittest.TestCase):
         spawn(self.sample_corofunc, disp=self.disp)
 
         callback01 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        self.assertFalse(callback01(self.ev.TIMEOUT))
+        self.callog.append(('callback', TIMEOUT))
+        self.assertFalse(callback01(TIMEOUT))
 
         callback02 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        self.assertFalse(callback02(self.ev.TIMEOUT))
+        self.callog.append(('callback', TIMEOUT))
+        self.assertFalse(callback02(TIMEOUT))
 
         callback03 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        self.assertFalse(callback03(self.ev.TIMEOUT))
+        self.callog.append(('callback', TIMEOUT))
+        self.assertFalse(callback03(TIMEOUT))
 
         self.assertEqual(self.callog, [
             ('sample:awaitable', callback01),
             ('watch_timer', callback01, 2.5),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback01),
-            ('sample:return_value', self.ev.TIMEOUT),
+            ('sample:return_value', TIMEOUT),
             ('watch_timer', callback02, 5.0),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback02),
-            ('sample:return_value', self.ev.TIMEOUT),
+            ('sample:return_value', TIMEOUT),
             ('watch_timer', callback03, 7.0),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback03),
-            ('sample:return_value', self.ev.TIMEOUT)
+            ('sample:return_value', TIMEOUT)
         ])
 
     def test_coroutine_close(self):
@@ -112,34 +104,34 @@ class TestCoroutineSwitching(unittest.TestCase):
         spawn(self.sample_corofunc, disp=self.disp)
 
         callback01 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        callback01(self.ev.TIMEOUT)
+        self.callog.append(('callback', TIMEOUT))
+        callback01(TIMEOUT)
 
         callback02 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
-        self.callog.append(('callback', self.ev.ERROR))
-        callback02(self.ev.ERROR)
+        self.callog.append(('callback', ERROR))
+        callback02(ERROR)
 
         callback03 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        callback03(self.ev.TIMEOUT)
+        self.callog.append(('callback', TIMEOUT))
+        callback03(TIMEOUT)
 
         self.assertEqual(self.callog, [
             ('sample:awaitable', callback01),
 
             ('watch_timer', callback01, 2.5),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback01),
-            ('sample:return_value', self.ev.TIMEOUT),
+            ('sample:return_value', TIMEOUT),
 
             ('watch_timer', callback02, 5.0),
-            ('callback', self.ev.ERROR),
+            ('callback', ERROR),
             ('cancel', callback02),
             ('sample:Exception', OSError),
 
             ('watch_timer', callback03, 7.0),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback03),
-            ('sample:return_value', self.ev.TIMEOUT)
+            ('sample:return_value', TIMEOUT)
         ])
 
     def test_coroutine_switch_uncatched_error(self):
@@ -151,29 +143,29 @@ class TestCoroutineSwitching(unittest.TestCase):
             callback01 = [b[0]
                           for a, *b in self.callog
                           if a == 'watch_timer'][-1]
-            self.callog.append(('callback', self.ev.ERROR))
-            callback01(self.ev.ERROR)
+            self.callog.append(('callback', ERROR))
+            callback01(ERROR)
 
             callback02 = [b[0]
                           for a, *b in self.callog
                           if a == 'watch_timer'][-1]
-            self.callog.append(('callback', self.ev.TIMEOUT))
-            callback02(self.ev.TIMEOUT)
+            self.callog.append(('callback', TIMEOUT))
+            callback02(TIMEOUT)
 
             callback03 = [b[0]
                           for a, *b in self.callog
                           if a == 'watch_timer'][-1]
-            self.callog.append(('callback', self.ev.TIMEOUT))
-            callback03(self.ev.TIMEOUT)
+            self.callog.append(('callback', TIMEOUT))
+            callback03(TIMEOUT)
 
         self.assertEqual(self.callog, [
             ('sample:awaitable', callback01),
             ('watch_timer', callback01, 2.5),
-            ('callback', self.ev.ERROR),
+            ('callback', ERROR),
             ('cancel', callback01),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback02),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback03),
         ])
 
@@ -187,20 +179,20 @@ class TestCoroutineSwitching(unittest.TestCase):
         )
 
     async def sample_corofunc2(self):
-        awaitable = ready(2, self.ev.READ, disp=self.disp)
+        awaitable = ready(2, READ, disp=self.disp)
         self.callog.append(('sample:awaitable', awaitable))
         return_value = await awaitable
         self.callog.append(('sample:return_value', return_value))
 
         try:
-            return_value = await ready(5, self.ev.READ, disp=self.disp)
+            return_value = await ready(5, READ, disp=self.disp)
             self.callog.append(('sample:return_value', return_value))
         except Exception as exc:
             self.callog.append(('sample:Exception', (exc
                                                      if type(exc) == 'type'
                                                      else type(exc))))
         try:
-            return_value = await ready(7, self.ev.READ,
+            return_value = await ready(7, READ,
                                        timeout=7.0, disp=self.disp)
             self.callog.append(('sample:return_value', return_value))
         except Exception as exc:
@@ -214,33 +206,33 @@ class TestCoroutineSwitching(unittest.TestCase):
         spawn(self.sample_corofunc2, disp=self.disp)
 
         callback01 = [b[0] for a, *b in self.callog if a == 'watch_io'][-1]
-        self.callog.append(('callback', self.ev.READ))
-        callback01(self.ev.READ)
+        self.callog.append(('callback', READ))
+        callback01(READ)
 
         callback02 = [b[0] for a, *b in self.callog if a == 'watch_io'][-1]
-        self.callog.append(('callback', self.ev.ERROR))
-        callback02(self.ev.ERROR)
+        self.callog.append(('callback', ERROR))
+        callback02(ERROR)
 
         callback03 = [b[0] for a, *b in self.callog if a == 'watch_io'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        callback03(self.ev.TIMEOUT)
+        self.callog.append(('callback', TIMEOUT))
+        callback03(TIMEOUT)
 
         self.assertEqual(self.callog, [
             ('sample:awaitable', callback01),
 
-            ('watch_io', callback01, 2, self.ev.READ),
-            ('callback', self.ev.READ),
+            ('watch_io', callback01, 2, READ),
+            ('callback', READ),
             ('cancel', callback01),
-            ('sample:return_value', self.ev.READ),
+            ('sample:return_value', READ),
 
-            ('watch_io', callback02, 5, self.ev.READ),
-            ('callback', self.ev.ERROR),
+            ('watch_io', callback02, 5, READ),
+            ('callback', ERROR),
             ('cancel', callback02),
             ('sample:Exception', OSError),
 
             ('watch_timer', callback03, 7.0),
-            ('watch_io', callback03, 7, self.ev.READ),
-            ('callback', self.ev.TIMEOUT),
+            ('watch_io', callback03, 7, READ),
+            ('callback', TIMEOUT),
             ('cancel', callback03),
             ('sample:Exception', TimeoutError),
         ])

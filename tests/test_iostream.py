@@ -3,17 +3,12 @@ import unittest
 
 from squall import abc
 from squall.coroutine import spawn, Dispatcher, IOStream
+from squall.coroutine import READ, WRITE, TIMEOUT, ERROR
 
 
 class MockEventDispatcher(object):
     """
     """
-    READ = 0x001
-    WRITE = 0x002
-    ERROR = 0x0F0
-    TIMEOUT = 0x100
-    CLEANUP = 0x200
-
     def __init__(self, callog):
         self.callog = callog
 
@@ -92,10 +87,7 @@ class TestIOStream(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         self.callog = list()
         self.disp = Dispatcher()
-        if hasattr(self.disp._event_disp, '_loop'):
-            self.disp._event_disp._loop.close()
         self.disp._event_disp = MockEventDispatcher(self.callog)
-        self.ev = self.disp._event_disp
         super(TestIOStream, self).__init__(*args, **kwargs)
 
     async def sample_corofunc(self, stream):
@@ -111,7 +103,8 @@ class TestIOStream(unittest.TestCase):
             self.callog.append(('sample:Exception', (exc
                                                      if type(exc) == 'type'
                                                      else type(exc))))
-        stream.write(b'TEST')
+        if not stream.closed:
+            stream.write(b'TEST')
         try:
             return_value = await stream.flush(timeout=7.0)
             self.callog.append(('sample:return_value', return_value))
@@ -129,40 +122,40 @@ class TestIOStream(unittest.TestCase):
         callback01 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_bytes'][-1]
-        self.callog.append(('callback', self.ev.READ, b'READ_BYTES'))
-        callback01(self.ev.READ, b'READ_BYTES')
+        self.callog.append(('callback', READ, b'READ_BYTES'))
+        callback01(READ, b'READ_BYTES')
 
         callback02 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_until'][-1]
-        self.callog.append(('callback', self.ev.READ, b'READ_UNTIL'))
-        callback02(self.ev.READ, b'READ_UNTIL')
+        self.callog.append(('callback', READ, b'READ_UNTIL'))
+        callback02(READ, b'READ_UNTIL')
 
         callback03 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_flush'][-1]
-        self.callog.append(('callback', self.ev.WRITE))
-        callback03(self.ev.WRITE)
+        self.callog.append(('callback', WRITE))
+        callback03(WRITE)
 
         self.assertListEqual(self.callog, [
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, stream.buffer_size),
-            ('callback', self.ev.READ, b'READ_BYTES'),
+            ('callback', READ, b'READ_BYTES'),
             ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
             ('watch_read_until', callback02, b'\r\n', stream.buffer_size),
-            ('callback', self.ev.READ, b'READ_UNTIL'),
+            ('callback', READ, b'READ_UNTIL'),
             ('cancel', callback02),
             ('buff:cancel',),
             ('sample:return_value', b'READ_UNTIL'),
             ('write', b'TEST'),
             ('watch_timer', callback03, 7.0),
             ('watch_flush', callback03),
-            ('callback', self.ev.WRITE),
+            ('callback', WRITE),
             ('cancel', callback03),
             ('buff:cancel',),
-            ('sample:return_value', self.ev.WRITE)])
+            ('sample:return_value', WRITE)])
 
         self.assertFalse(stream.closed)
 
@@ -175,20 +168,20 @@ class TestIOStream(unittest.TestCase):
         callback01 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_bytes'][-1]
-        self.callog.append(('callback', self.ev.READ, b'READ_BYTES'))
-        callback01(self.ev.READ, b'READ_BYTES')
+        self.callog.append(('callback', READ, b'READ_BYTES'))
+        callback01(READ, b'READ_BYTES')
 
         callback02 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_until'][-1]
 
         coro.close()
-        stream.close()
+        stream.abort()
 
         self.assertListEqual(self.callog, [
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, 4*1024),
-            ('callback', self.ev.READ, b'READ_BYTES'),
+            ('callback', READ, b'READ_BYTES'),
             ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
@@ -203,40 +196,24 @@ class TestIOStream(unittest.TestCase):
         stream = IOStream(self.disp, MockAutoBuffer(self.callog, 1000, 50000))
         self.assertEqual(stream.block_size, 960)
         self.assertEqual(stream.buffer_size, 49920)
-        coro = spawn(self.sample_corofunc, stream, disp=self.disp)
+        spawn(self.sample_corofunc, stream, disp=self.disp)
 
         callback01 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_bytes'][-1]
-        stream.close()
-        self.callog.append(('callback', self.ev.READ, b'READ_BYTES'))
-        callback01(self.ev.READ, b'READ_BYTES')
-
-        callback02 = [b[0]
-                      for a, *b in self.callog
-                      if a == 'watch_read_until'][-1]
-        callback03 = [b[0]
-                      for a, *b in self.callog
-                      if a == 'watch_flush'][-1]
+        stream.abort()
+        self.callog.append(('callback', READ, b'READ_BYTES'))
+        callback01(READ, b'READ_BYTES')
 
         self.assertListEqual(self.callog, [
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, 4096),
             ('buff:release',),
-            ('callback', self.ev.READ, b'READ_BYTES'),
+            ('callback', READ, b'READ_BYTES'),
             ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
-            ('watch_timer', callback02, 5.0),
-            ('watch_read_until', callback02, b'\r\n', 49920),
-            ('cancel', callback02),
-            ('buff:cancel',),
-            ('sample:Exception', RuntimeError),
-            ('write', b'TEST'),
-            ('watch_timer', callback03, 7.0),
-            ('watch_flush', callback03),
-            ('cancel', callback03),
-            ('buff:cancel',),
-            ('sample:Exception', RuntimeError)])
+            ('sample:Exception', ConnectionError),
+            ('sample:Exception', ConnectionError)])
 
 
     def test_error_andttimeout(self):
@@ -248,37 +225,37 @@ class TestIOStream(unittest.TestCase):
         callback01 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_bytes'][-1]
-        self.callog.append(('callback', self.ev.READ, b'READ_BYTES'))
-        callback01(self.ev.READ, b'READ_BYTES')
+        self.callog.append(('callback', READ, b'READ_BYTES'))
+        callback01(READ, b'READ_BYTES')
 
         callback02 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_read_until'][-1]
-        self.callog.append(('callback', self.ev.TIMEOUT))
-        callback02(self.ev.TIMEOUT)
+        self.callog.append(('callback', TIMEOUT))
+        callback02(TIMEOUT)
 
         callback03 = [b[0]
                       for a, *b in self.callog
                       if a == 'watch_flush'][-1]
-        self.callog.append(('callback', self.ev.ERROR, errno.ECONNRESET))
-        callback03(self.ev.ERROR, errno.ECONNRESET)
+        self.callog.append(('callback', ERROR, errno.ECONNRESET))
+        callback03(ERROR, errno.ECONNRESET)
 
         self.assertListEqual(self.callog, [
             ('sample:awaitable', callback01),
             ('watch_read_bytes', callback01, 4*1024),
-            ('callback', self.ev.READ, b'READ_BYTES'),
+            ('callback', READ, b'READ_BYTES'),
             ('buff:cancel',),
             ('sample:return_value', b'READ_BYTES'),
             ('watch_timer', callback02, 5.0),
             ('watch_read_until', callback02, b'\r\n', stream.buffer_size),
-            ('callback', self.ev.TIMEOUT),
+            ('callback', TIMEOUT),
             ('cancel', callback02),
             ('buff:cancel',),
             ('sample:Exception', TimeoutError),
             ('write', b'TEST'),
             ('watch_timer', callback03, 7.0),
             ('watch_flush', callback03),
-            ('callback', self.ev.ERROR, errno.ECONNRESET),
+            ('callback', ERROR, errno.ECONNRESET),
             ('cancel', callback03),
             ('buff:cancel',),
             ('sample:Exception', ConnectionResetError)])

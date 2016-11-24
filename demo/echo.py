@@ -1,7 +1,8 @@
 import sys
 import logging
-from squall import coroutine
+from signal import SIGTERM, SIGINT
 from squall.network import TCPServer
+from squall import coroutine
 
 logger = logging.getLogger('echo.py')
 
@@ -16,6 +17,12 @@ class EchoServer(TCPServer):
             "{} Established echo listener".format(addr))
         self.on_finish = lambda addr: logger.info(
             "{} Finished echo listener".format(addr))
+
+    def listen(self, port, address=None):
+        """ Starts connection listening.
+        """
+        super(EchoServer, self).listen(port, address)
+        coroutine.run_until(SIGTERM, SIGINT)
 
     async def handle_stream(self, stream, addr):
         """ Request handler
@@ -37,4 +44,3 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077
     EchoServer().listen(port)
-    coroutine.start()

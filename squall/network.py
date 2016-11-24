@@ -6,7 +6,7 @@ import errno
 import socket
 import logging
 from abc import ABCMeta, abstractmethod
-from squall.coroutine import Dispatcher, IOStream, spawn
+from squall.coroutine import Dispatcher, IOStream, READ, CLEANUP, spawn
 from _squall import SocketAutoBuffer
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,8 @@ class SocketStream(IOStream):
         try:
             super(SocketStream, self).abort()
             self._sock.shutdown(socket.SHUT_RDWR)
+        except IOError:
+            pass
         finally:
             self._sock.close()
 
@@ -57,7 +59,7 @@ class SocketAcceptor(object):
             self._conn.pop(conn, None)
 
     def _acceptor(self, revents):
-        if revents & self._event_disp.READ:
+        if revents & READ:
             attempts = 16
             while attempts:
                 attempts -= 1
@@ -74,7 +76,7 @@ class SocketAcceptor(object):
                         break
             return True
         else:
-            if revents & self._event_disp.CLEANUP:
+            if revents & CLEANUP:
                 self.finish()
 
     def listen(self):
@@ -82,7 +84,7 @@ class SocketAcceptor(object):
         """
         if not self._event_disp.watch_io(self._acceptor,
                                          self._sock.fileno(),
-                                         self._event_disp.READ):
+                                         READ):
             raise RuntimeError("Cannot setup connection acceptor")
         self.on_listen(self._addr)
 
@@ -120,7 +122,7 @@ class TCPServer(metaclass=ABCMeta):
     def _connection_factory(self, sock, addr):
         return (SocketStream(sock, self._block_size, self._buffer_size), addr)
 
-    def listen(self, port, address=""):
+    def listen(self, port, address=None):
         """ Starts accepting connections on the given port.
         """
         sockets = bind_sockets(port, address=address)

@@ -1,18 +1,19 @@
 """
-Low-level event dispatcher and I/O autobuffer designed
-for use with a callback functions.
+Low-level classes
 """
 import os
 import errno
 import signal
+import threading
 from time import time
+from functools import partial
 from tornado.ioloop import IOLoop
 from abc import abstractmethod
 from squall import abc
 
 
-class EventDispatcher(abc.EventDispatcher):
-    """ Sample event dispatcher.
+class EventLoop(abc.EventLoop):
+    """ Sample event loop.
     """
     TIMEOUT = 0x100
     READ = IOLoop.READ
@@ -21,10 +22,13 @@ class EventDispatcher(abc.EventDispatcher):
     CLEANUP = 0x40000
     SIGNAL = 0x400
 
+    _tls = threading.local()
+
     def __init__(self):
-        self._cleanup = False
+        self._running = False
+        self._finishing = False
+        self._pending = dict()
         self._signals = dict()
-        self._cancels = dict()
         self._loop = IOLoop(make_current=False)
 
     def _handle_signal(self, signum, frame):
@@ -41,73 +45,190 @@ class EventDispatcher(abc.EventDispatcher):
         if signum in self._signals:
             self._signals[signum].pop(ctx, None)
 
+    @classmethod
+    def instance(cls):
+        """ Returns thread local instance.
+        """
+        if not hasattr(cls._tls, 'instance'):
+            setattr(cls._tls, 'instance', cls())
+        return getattr(cls._tls, 'instance')
+
+    @property
+    def running(self):
+        """ Returns `True` if event loop is running.
+        """
+        return self._running
+
+    @property
+    def pending(self):
+        """ Number of the pending watchers.
+        """
+        return len(self._pending)
+
+    def start(self):
+        """ Starts event loop.
+        """
+        self._running = True
+        self._loop.start()
+
+    def stop(self):
+        """ Stops event loop.
+        """
+        if not self._finishing:
+            self._finishing = True
+            while len(self._pending):
+                (callback, ctx, _), cancel = self._pending.popitem()
+                cancel()
+                callback(self.CLEANUP)
+            self._loop.stop()
+            self._loop.close(True)
+            delattr(self.__class__._tls, 'instance')
+            self._running = False
+
+    def watch_timer(self, callback, ctx, seconds):
+        """ Sets an event dispatcher to call `callback` for `ctx`
+        with code `TIMEOUT` after a specified time in seconds.
+        If success returns callable which cancels this watching
+        at call otherwise `None`.
+        """
+        timeout = list()
+        key = (callback, ctx, 0)
+
+        def cancel_():
+            self._pending.pop(key)
+            self._loop.remove_timeout(timeout.pop())
+
+        def callback_(revents):
+            timeout.append(self._loop.add_timeout(time() + seconds,
+                                                  callback_, self.TIMEOUT))
+            self._pending[key] = cancel_
+            if revents is not None:
+                callback(ctx, revents)
+
+        if not self._finishing:
+            cancel = self._pending.get(key)
+            if cancel is not None:
+                cancel()
+            callback_(None)
+        return self._pending[key]
+
+    def watch_io(self, callback, ctx, fd, events):
+        """ Sets an event dispatcher to call `callback` for `ctx` 
+        with code `READ` and/or `WRITE` when I/O device  with given
+        `fd` will be ready for corresponding I/O operations.
+        If success returns callable which cancels this watching
+        at call otherwise `None`.
+        """
+        key = (callback, ctx, 1)
+
+        def cancel_():
+            self._pending.pop(key)
+            self._loop.remove_handler(fd)
+
+        def callback_(fd, revents):
+            callback(ctx, revents)
+
+        if not self._finishing:
+            cancel = self._pending.get(key)
+            if cancel is not None:
+                cancel()
+            self._loop.add_handler(fd, callback_, events)
+            self._pending[key] = cancel_
+        return self._pending[key]
+
+    def watch_signal(self, callback, ctx, signum):
+        """ Sets an event dispatcher to call `callback` for `ctx`  
+        with code `SIGNAL` when a systems signal with given `signum`
+        will be received.
+        If success returns callable which cancels this watching
+        at call otherwise `None`.
+        """
+        key = (callback, ctx, 2)
+
+        def cancel_():
+            self._pending.pop(key)
+            self._cancel_signal(callback, signum)
+
+        def callback_(revents):
+            self._watch_signal(callback, callback_, signum)
+            self._pending[key] = cancel_
+            if revents is not None:
+                callback(ctx, revents)
+
+        if not self._finishing:
+            cancel = self._pending.get(key)
+            if cancel is not None:
+                cancel()
+            callback_(None)
+        return self._pending[key]
+
+
+READ = EventLoop.READ
+WRITE = EventLoop.WRITE
+ERROR = EventLoop.ERROR
+SIGNAL = EventLoop.SIGNAL
+TIMEOUT = EventLoop.TIMEOUT
+CLEANUP = EventLoop.CLEANUP
+
+
+class EventDispatcher(object):
+    """ Sample event dispatcher.
+    """
+
+    def __init__(self):
+        self.__loop = None
+        self._finishing = False
+        self._cancels = dict()
+
+    @property
+    def _loop(self):
+        if self.__loop is None:
+            self.__loop = EventLoop.instance()
+        return self.__loop
+
+    def _callback(self, callback, revents):
+        if not callback(revents):
+            self.cancel(callback)
+
+    @property
+    def initialized(self):
+        """ Returns `True` if event dispatcher binded with event loop.
+        """
+        return self.__loop is not None
+
     def start(self):
         """ Starts event dispatcher.
         """
-        self.watch_signal(lambda revents: self.stop(), signal.SIGINT)
-        self._loop.start()
+        if not self._loop.running:
+            self._loop.start()
 
     def stop(self):
         """ Stops event dispatcher.
         """
-        def deferred_stop(revents):
-            self._cleanup = True
-            for callback, cancels in tuple(self._cancels.items()):
-                self.cancel(callback)
-                if any(cancels):
-                    callback(self.CLEANUP)
-            self._loop.stop()
-            self._loop.close(True)
-            self._loop = IOLoop(make_current=False)
-            self._cleanup = False
+        def deferred_stop(_):
+            while len(self._cancels):
+                callback, cancels = self._cancels.popitem()
+                for cancel in cancels.values():
+                    cancel()
+                callback(self._loop.CLEANUP)
+            if not self._loop.pending:
+                self._loop.stop()
 
-        # deferred stop!
-        self.watch_timer(deferred_stop, 0)
-
-    def _del_cancel(self, callback, index):
-        if callback in self._cancels:
-            self._cancels[callback][index] = None
-
-    def _apply_cancel(self, callback, index):
-        if callback in self._cancels:
-            if self._cancels[callback][index] is not None:
-                self._cancels[callback][index]()
-                self._cancels[callback][index] = None
-
-    def _set_cancel(self, callback, index, reset_previous, cancel):
-        if callback not in self._cancels:
-            self._cancels[callback] = [None, None, None]
-
-        if self._cancels[callback][index] is not None:
-            if reset_previous:
-                self._cancels[callback][index]()
-            else:
-                return False
-        self._cancels[callback][index] = cancel
-        return True
+        if not self._finishing:
+            self.watch_timer(deferred_stop, 0)
+            self._finishing = True
 
     def watch_timer(self, callback, seconds):
         """ Sets an event dispatcher to call `callback` with code `TIMEOUT`
         after a specified time in seconds.
         """
-        def timeout_callback(revents):
-            renew = True
-            reset_previous = False
-            if revents is not None:
-                self._del_cancel(callback, 0)
-                renew = callback(revents)
-            else:
-                reset_previous = True
-            if renew and not self._cleanup:
-                handle = self._loop.add_timeout(
-                        time() + seconds, timeout_callback, self.TIMEOUT)
-                cancel = lambda: self._loop.remove_timeout(handle)
-                if not self._set_cancel(callback, 0, reset_previous, cancel):
-                    cancel()
-
-        if seconds >= 0 and not self._cleanup:
-            timeout_callback(None)
-            return True
+        if not self._finishing:
+            cancel = self._loop.watch_timer(self._callback, callback, seconds)
+            if cancel is not None:
+                if callback not in self._cancels:
+                    self._cancels[callback] = dict()
+                self._cancels[callback][0] = cancel
+                return True
         return False
 
     def watch_io(self, callback, fd, events):
@@ -115,60 +236,35 @@ class EventDispatcher(abc.EventDispatcher):
         and/or `WRITE` when I/O device  with given `fd` will be ready
         for corresponding I/O operations.
         """
-        def io_callback(fd, revents):
-            renew = True
-            reset_previous = False
-            if revents is not None:
-                self._apply_cancel(callback, 1)
-                renew = callback(revents)
-
-                if callback in self._cancels:
-                    if not renew and not any(self._cancels[callback]):
-                        self._cancels.pop(callback)
-                else:
-                    renew = False
-
-            else:
-                reset_previous = True
-            if renew and not self._cleanup:
-                cancel = lambda: self._loop.remove_handler(fd)
-                if self._set_cancel(callback, 1, reset_previous, cancel):
-                    self._loop.add_handler(fd, io_callback, events)
-
-        if fd >= 0 and events > 0 and not self._cleanup:
-            io_callback(fd, None)
-            return True
+        if not self._finishing:
+            cancel = self._loop.watch_io(self._callback, callback, fd, events)
+            if cancel is not None:
+                if callback not in self._cancels:
+                    self._cancels[callback] = dict()
+                self._cancels[callback][1] = cancel
+                return True
         return False
 
     def watch_signal(self, callback, signum):
         """ Sets an event dispatcher to call `callback` with code `SIGNAL`
         when a systems signal with given `signum` will be received.
         """
-        def signal_callback(revents):
-            renew = True
-            reset_previous = False
-            if revents is not None:
-                self._del_cancel(callback, 2)
-                renew = callback(revents)
-            else:
-                reset_previous = True
-            if renew and not self._cleanup:
-                cancel = lambda: self._cancel_signal(callback, signum)
-                if self._set_cancel(callback, 2, reset_previous, cancel):
-                    self._watch_signal(callback, signal_callback, signum)
-
-        if signum > 0 and not self._cleanup:
-            signal_callback(None)
-            return True
+        if not self._finishing:
+            cancel = self._loop.watch_signal(self._callback, callback, signum)
+            if cancel is not None:
+                if callback not in self._cancels:
+                    self._cancels[callback] = dict()
+                self._cancels[callback][2] = cancel
+                return True
         return False
 
     def cancel(self, callback):
         """ Cancels all watchings for a given `callback`.
         """
-        if callback in self._cancels:
-            for cancel in self._cancels.pop(callback):
-                if cancel is not None:
-                    cancel()
+        cancels = self._cancels.pop(callback, None)
+        if cancels is not None:
+            for cancel in cancels.values():
+                cancel()
 
 
 class AutoBuffer(abc.AutoBuffer):
@@ -189,7 +285,7 @@ class AutoBuffer(abc.AutoBuffer):
         self._max_size = (int(max_size / self.block_size) * self.block_size
                           if max_size > self.block_size * 8
                           else self.block_size * 8)
-        self._events = self._disp.READ
+        self._events = READ
 
     @property
     def _events(self):
@@ -209,26 +305,26 @@ class AutoBuffer(abc.AutoBuffer):
                 self.__events = value
 
     def _handler(self, revents):
-        if revents & self._disp.ERROR:
+        if revents & ERROR:
             self._errno = errno.EIO
         else:
             try:
-                if revents & self._disp.READ:
+                if revents & READ:
                     block = self._read_block(self._block_size)
                     if len(block) > 0:
                         self._inbuf += block
                         if len(self._inbuf) >= self._max_size:
-                            self._events = self._events ^ self._disp.READ
+                            self._events = self._events ^ READ
                     else:
-                        self._events = self._events ^ self._disp.READ
+                        self._events = self._events ^ READ
                         self._errno = errno.ECONNRESET
-                if revents & self._disp.WRITE:
+                if revents & WRITE:
                     block = self._outbuf[:self._block_size]
                     if len(block) > 0:
                         sent = self._write_block(block)
                         self._outbuf = self._outbuf[sent:]
                     if len(self._outbuf) == 0:
-                        self._events = self._events ^ self._disp.WRITE
+                        self._events = self._events ^ WRITE
             except IOError as exc:
                 self._errno = exc.errno
         callback, revents, result = self._check_task()
@@ -239,7 +335,7 @@ class AutoBuffer(abc.AutoBuffer):
     def _check_task(self):
         if self._task:
             callback, event, *args = self._task
-            if event == self._disp.READ:
+            if event == READ:
                 num_bytes = args[0]
                 if len(args) == 2:
                     delimiter = args[1]
@@ -248,16 +344,16 @@ class AutoBuffer(abc.AutoBuffer):
                         pos += len(delimiter)
                         result, self._inbuf = (self._inbuf[:pos],
                                                self._inbuf[pos:])
-                        self._events = self._events | self._disp.READ
+                        self._events = self._events | READ
                         self.cancel()
                         return callback, event, result
                 if num_bytes <= len(self._inbuf):
                     result, self._inbuf = (self._inbuf[:num_bytes],
                                            self._inbuf[num_bytes:])
-                    self._events = self._events | self._disp.READ
+                    self._events = self._events | READ
                     self.cancel()
                     return callback, event, result
-            elif event == self._disp.WRITE:
+            elif event == WRITE:
                 if len(self._outbuf) == 0:
                     self.cancel()
                     return callback, event, True
@@ -265,7 +361,7 @@ class AutoBuffer(abc.AutoBuffer):
                 result = self._errno
                 self._errno = 0
                 self.cancel()
-                return callback, self._disp.ERROR, result
+                return callback, ERROR, result
         return (None, None, None)
 
     @abstractmethod
@@ -317,11 +413,11 @@ class AutoBuffer(abc.AutoBuffer):
         `number` of bytes.
         """
         if not self._closed and not self._errno:
-            self._task = (callback, self._disp.READ, number)
+            self._task = (callback, READ, number)
             _, _, result = self._check_task()
             if result is not None:
                 self._disp.watch_timer(
-                    lambda *args: callback(self._disp.READ, result), 0)
+                    lambda *args: callback(READ, result), 0)
             return True
         return False
 
@@ -332,11 +428,11 @@ class AutoBuffer(abc.AutoBuffer):
         included in result.
         """
         if not self._closed and not self._errno:
-            self._task = (callback, self._disp.READ, max_number, delimiter)
+            self._task = (callback, READ, max_number, delimiter)
             _, _, result = self._check_task()
             if result is not None:
                 self._disp.watch_timer(
-                    lambda *args: callback(self._disp.READ, result), 0)
+                    lambda *args: callback(READ, result), 0)
             return True
         return False
 
@@ -345,11 +441,11 @@ class AutoBuffer(abc.AutoBuffer):
         when a autobuffer will complete drain outcoming buffer.
         """
         if not self._closed and not self._errno:
-            self._task = (callback, self._disp.WRITE)
+            self._task = (callback, WRITE)
             _, _, result = self._check_task()
             if result is not None:
                 self._disp.watch_timer(
-                    lambda *args: callback(self._disp.READ, result), 0)
+                    lambda *args: callback(READ, result), 0)
             return True
         return False
 
@@ -357,7 +453,7 @@ class AutoBuffer(abc.AutoBuffer):
         """ Puts `data` bytes to outcoming buffer to asynchronous
         sending. Returns the number of bytes written.
         """
-        self._events = self._events | self._disp.WRITE
+        self._events = self._events | WRITE
         if not self._closed and not self._errno:
             chunk = data[:self._max_size - len(self._outbuf)]
             self._outbuf += chunk
