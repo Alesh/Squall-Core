@@ -41,13 +41,14 @@ class TestEventDispatcher(unittest.TestCase):
             return False
 
         def callback07(revents):
+            self.assertTrue(event_disp.initialized)
             self.callog.append(('callback07', revents))
             event_disp.stop()
             return False
 
         self.assertFalse(event_disp.initialized)
         self.assertTrue(event_disp.watch_timer(callback01, 0.1))
-        self.assertTrue(event_disp.initialized)
+        self.assertFalse(event_disp.initialized)
         self.assertTrue(event_disp.watch_timer(callback02, 0.05))
         self.assertTrue(event_disp.watch_timer(callback02, 0.21))
         self.assertTrue(event_disp.watch_timer(callback03, 0.31))

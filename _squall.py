@@ -9,6 +9,7 @@ from time import time
 from functools import partial
 from tornado.ioloop import IOLoop
 from abc import abstractmethod
+from collections import deque
 from squall import abc
 
 
@@ -69,7 +70,10 @@ class EventLoop(abc.EventLoop):
         """ Starts event loop.
         """
         self._running = True
-        self._loop.start()
+        try:
+            self._loop.start()
+        except KeyboardInterrupt:
+            pass
 
     def stop(self):
         """ Stops event loop.
@@ -81,7 +85,7 @@ class EventLoop(abc.EventLoop):
                 cancel()
                 callback(self.CLEANUP)
             self._loop.stop()
-            self._loop.close(True)
+            self._loop.close()
             delattr(self.__class__._tls, 'instance')
             self._running = False
 
@@ -177,8 +181,10 @@ class EventDispatcher(object):
 
     def __init__(self):
         self.__loop = None
+        self._running = False
         self._finishing = False
         self._cancels = dict()
+        self._querun = deque()
 
     @property
     def _loop(self):
@@ -191,14 +197,19 @@ class EventDispatcher(object):
             self.cancel(callback)
 
     @property
-    def initialized(self):
-        """ Returns `True` if event dispatcher binded with event loop.
+    def running(self):
+        """ Returns `True` if event dispatcher is running.
         """
-        return self.__loop is not None
+        return self._running
 
     def start(self):
         """ Starts event dispatcher.
         """
+        self._running = True
+        while len(self._querun):
+            deffred_watch = self._querun.popleft()
+            if not deffred_watch():
+                raise RuntimeError("Cdnnot start deffred watch")
         if not self._loop.running:
             self._loop.start()
 
@@ -213,21 +224,29 @@ class EventDispatcher(object):
                 callback(self._loop.CLEANUP)
             if not self._loop.pending:
                 self._loop.stop()
+            self._running = False
 
         if not self._finishing:
             self.watch_timer(deferred_stop, 0)
             self._finishing = True
+
 
     def watch_timer(self, callback, seconds):
         """ Sets an event dispatcher to call `callback` with code `TIMEOUT`
         after a specified time in seconds.
         """
         if not self._finishing:
-            cancel = self._loop.watch_timer(self._callback, callback, seconds)
-            if cancel is not None:
-                if callback not in self._cancels:
-                    self._cancels[callback] = dict()
-                self._cancels[callback][0] = cancel
+            if self._running:
+                cancel = self._loop.watch_timer(self._callback,
+                                                callback, seconds)
+                if cancel is not None:
+                    if callback not in self._cancels:
+                        self._cancels[callback] = dict()
+                    self._cancels[callback][0] = cancel
+                    return True
+            else:
+                deferred = partial(self.watch_timer, callback, seconds)
+                self._querun.append(deferred)
                 return True
         return False
 
@@ -237,11 +256,17 @@ class EventDispatcher(object):
         for corresponding I/O operations.
         """
         if not self._finishing:
-            cancel = self._loop.watch_io(self._callback, callback, fd, events)
-            if cancel is not None:
-                if callback not in self._cancels:
-                    self._cancels[callback] = dict()
-                self._cancels[callback][1] = cancel
+            if self._running:
+                cancel = self._loop.watch_io(self._callback,
+                                             callback, fd, events)
+                if cancel is not None:
+                    if callback not in self._cancels:
+                        self._cancels[callback] = dict()
+                    self._cancels[callback][1] = cancel
+                    return True
+            else:
+                deferred = partial(self.watch_io, callback, fd, events)
+                self._querun.append(deferred)
                 return True
         return False
 
@@ -250,11 +275,17 @@ class EventDispatcher(object):
         when a systems signal with given `signum` will be received.
         """
         if not self._finishing:
-            cancel = self._loop.watch_signal(self._callback, callback, signum)
-            if cancel is not None:
-                if callback not in self._cancels:
-                    self._cancels[callback] = dict()
-                self._cancels[callback][2] = cancel
+            if self._running:
+                cancel = self._loop.watch_signal(self._callback,
+                                                 callback, signum)
+                if cancel is not None:
+                    if callback not in self._cancels:
+                        self._cancels[callback] = dict()
+                    self._cancels[callback][2] = cancel
+                    return True
+            else:
+                deferred = partial(self.watch_signal, callback, signum)
+                self._querun.append(deferred)
                 return True
         return False
 

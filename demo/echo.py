@@ -1,8 +1,8 @@
+import os
 import sys
 import logging
-from signal import SIGTERM, SIGINT
 from squall.network import TCPServer
-from squall import coroutine
+from squall.coroutine import start
 
 logger = logging.getLogger('echo.py')
 
@@ -22,12 +22,12 @@ class EchoServer(TCPServer):
         """ Starts connection listening.
         """
         super(EchoServer, self).listen(port, address)
-        coroutine.run_until(SIGTERM, SIGINT)
+        start(worker=0)
 
     async def handle_stream(self, stream, addr):
         """ Request handler
         """
-        logger.info("{} Accepted connection".format(addr))
+        logger.info("{}{} Accepted connection".format(os.getpid(), addr))
         try:
             while not stream.closed:
                 data = await stream.read_until(b'\r\n', timeout=15)

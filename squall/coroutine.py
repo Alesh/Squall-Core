@@ -5,8 +5,10 @@ import os
 import logging
 import threading
 from time import time
+import multiprocessing
 from functools import partial
 from collections import deque
+from signal import SIGTERM, SIGINT
 
 from squall import abc
 from _squall import EventDispatcher
@@ -60,9 +62,33 @@ class Dispatcher(object):
             setattr(cls._tls, 'instance', cls())
         return getattr(cls._tls, 'instance')
 
-    def start(self):
-        """ Starts an event dispatcher and switching of coroutine..
+    @property
+    def running(self):
+        """ Returns `True` if this is running.
         """
+        return self._event_disp.running
+
+    def spawn(self, corofunc, *args, **kwargs):
+        """ Creates a coroutine created from `corofunc` and given parameters.
+        """
+        coro = corofunc(*args, **kwargs)
+        with self._lock_as_current(coro):
+            coro.send(None)
+        return coro
+
+    def start(self, until_signal=(SIGTERM, SIGINT)):
+        """ Starts an event dispatcher and switching of coroutine.
+        """
+        if isinstance(until_signal, int):
+            until_signal = (until_signal, )
+        assert isinstance(until_signal, (tuple, list))
+
+        async def terminator(signum):
+            await signal(signum)
+            self.stop()
+
+        for signum in until_signal:
+            self.spawn(terminator, signum)
         self._event_disp.start()
 
     def stop(self):
@@ -83,7 +109,7 @@ class _Awaitable(object):
 
     def __await__(self):
         if not self._setup():
-            raise RuntimeError("Cannot setup event watching")
+            raise IOError("Cannot setup event watching")
         try:
             event, payload = yield
             return payload if payload is not None else event
@@ -100,7 +126,7 @@ class _Awaitable(object):
                 else:
                     self._coro.send((event, payload))
             else:
-                if event == ERROR:
+                if event & ERROR:
                     if payload is not None:
                         if isinstance(payload, Exception):
                             self._coro.throw(payload)
@@ -110,7 +136,7 @@ class _Awaitable(object):
                         else:
                             self._coro.throw(str(payload))
                     else:
-                        self._coro.throw(IOError("Event loop internal error"))
+                        self._coro.throw(IOError("File descriptor error"))
                 else:
                     self._cancel = lambda: None
                     self._coro.close()
@@ -283,11 +309,44 @@ class IOStream(object):
         self._autobuff.release()
 
 
-def start(*, disp=None):
+def start(*, disp=None, worker=1,
+          until_signal=(SIGTERM, SIGINT)):
     """ Starts default coroutine dispatcher.
     """
     disp = disp or Dispatcher.instance()
-    disp.start()
+    if isinstance(until_signal, int):
+        until_signal = (until_signal, )
+    assert isinstance(until_signal, (tuple, list))
+    if worker < 1:
+        worker = multiprocessing.cpu_count()
+    if worker > 1:
+        main_disp = Dispatcher()
+
+        async def process_holder():
+            process = multiprocessing.Process(target=disp.start, daemon=True)
+            process.start()
+            try:
+                await ready(process.sentinel, READ, disp=main_disp)
+            except IOError:
+                pass
+            # finally:
+            #     if main_disp.running:
+            #         logging.error("Child process: {} has terminated."
+            #                       "".format(process.pid))
+
+        for _ in range(worker):
+            main_disp.spawn(process_holder)
+
+        async def terminator(sigint):
+            await signal(sigint, disp=main_disp)
+            main_disp.stop()
+
+        main_disp.spawn(terminator, SIGTERM)
+        main_disp.spawn(terminator, SIGINT)
+        main_disp.start(until_signal=until_signal)
+
+    else:
+        disp.start()
 
 
 def stop(*, disp=None):
@@ -300,7 +359,7 @@ def stop(*, disp=None):
 def spawn(corofunc, *args, **kwargs):
     """ Creates a coroutine created from `corofunc` and given parameters.
     """
-    disp = kwargs.pop('disp', Dispatcher.instance())
+    disp = kwargs.get('disp', Dispatcher.instance())
     coro = corofunc(*args, **kwargs)
     with disp._lock_as_current(coro):
         coro.send(None)
@@ -366,20 +425,6 @@ def signal(signum, *, disp=None):
 
 
 # utility functions
-
-
-def run_until(*signals, disp=None):
-    """ Runs event dispatcher until received system `signals`.
-    """
-    disp = disp or Dispatcher.instance()
-
-    async def terminator(signum):
-        await signal(signum, disp=disp)
-        stop(disp=disp)
-
-    for signum in signals:
-        spawn(terminator, signum, disp=disp)
-    start(disp=disp)
 
 
 def timeout_gen(timeout):

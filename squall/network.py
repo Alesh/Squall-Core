@@ -6,7 +6,7 @@ import errno
 import socket
 import logging
 from abc import ABCMeta, abstractmethod
-from squall.coroutine import Dispatcher, IOStream, READ, CLEANUP, spawn
+from squall.coroutine import Dispatcher, IOStream, READ, CLEANUP
 from _squall import SocketAutoBuffer
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class SocketAcceptor(object):
                     sock, addr = self._sock.accept()
                     sock.setblocking(0)
                     conn = self._conn_factory(sock, addr)
-                    self._conn[conn] = spawn(self._coconn, *conn)
+                    self._conn[conn] = self._disp.spawn(self._coconn, *conn)
                 except IOError as exc:
                     if exc.errno == errno.ECONNABORTED:
                         continue
@@ -85,7 +85,7 @@ class SocketAcceptor(object):
         if not self._event_disp.watch_io(self._acceptor,
                                          self._sock.fileno(),
                                          READ):
-            raise RuntimeError("Cannot setup connection acceptor")
+            raise IOError("Cannot setup connection acceptor")
         self.on_listen(self._addr)
 
     def finish(self):
@@ -113,7 +113,8 @@ class TCPServer(metaclass=ABCMeta):
     def _add_acceptors(self, sockets):
         for sock in sockets:
             acceptor = SocketAcceptor(sock, self.handle_stream,
-                                      self._connection_factory, disp=self._disp)
+                                      self._connection_factory,
+                                      disp=self._disp)
             acceptor.on_listen = self.on_listen
             acceptor.on_finish = self.on_finish
             self._acceptors[sock] = acceptor
@@ -163,9 +164,5 @@ def bind_sockets(port, address=None, *,
         socket_.listen(backlog)
         results.append(socket_)
     if len(results) == 0:
-        raise RuntimeError("Cannot bind any sockets for {}".format(args))
+        raise IOError("Cannot bind any sockets for {}".format(args))
     return results
-
-
-
-

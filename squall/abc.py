@@ -112,13 +112,13 @@ class EventDispatcher(metaclass=ABCMeta):
     second time cancels the settings made in the first call.
 
     Event dispatcher should be not initialized (bind with event loop) in
-    constructor, do it on demand to support fork.
+    constructor, do it at start.
     """
 
     @property
     @abstractmethod
-    def initialized(self):
-        """ Returns `True` if event dispatcher binded with event loop.
+    def running(self):
+        """ Returns `True` if event dispatcher is running.
         """
 
     @abstractmethod
