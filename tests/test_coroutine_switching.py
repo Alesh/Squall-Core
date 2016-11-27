@@ -39,23 +39,23 @@ class TestCoroutineSwitching(unittest.TestCase):
         self.callog.clear()
 
     async def sample_corofunc(self):
-        awaitable = sleep(2.5, disp=self.disp)
+        awaitable = sleep(2.5)
         self.callog.append(('sample:awaitable', awaitable))
         return_value = await awaitable
         self.callog.append(('sample:return_value', return_value))
         try:
-            return_value = await sleep(5.0, disp=self.disp)
+            return_value = await sleep(5.0)
             self.callog.append(('sample:return_value', return_value))
         except Exception as exc:
             self.callog.append(('sample:Exception',
                                (exc if type(exc) == 'type' else type(exc))))
-        return_value = await sleep(7.0, disp=self.disp)
+        return_value = await sleep(7.0)
         self.callog.append(('sample:return_value', return_value))
 
     def test_coroutine_switch_success(self):
         """ Successed coroutine switching.
         """
-        spawn(self.sample_corofunc, disp=self.disp)
+        self.disp.spawn(self.sample_corofunc)
 
         callback01 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
         self.callog.append(('callback', TIMEOUT))
@@ -88,7 +88,7 @@ class TestCoroutineSwitching(unittest.TestCase):
     def test_coroutine_close(self):
         """ A coroutine closes while suspended running.
         """
-        coro = spawn(self.sample_corofunc, disp=self.disp)
+        coro = self.disp.spawn(self.sample_corofunc)
 
         callback = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
         coro.close()
@@ -101,7 +101,7 @@ class TestCoroutineSwitching(unittest.TestCase):
     def test_coroutine_switch_catched_error(self):
         """ Catches exception while a coroutine is running.
         """
-        spawn(self.sample_corofunc, disp=self.disp)
+        self.disp.spawn(self.sample_corofunc)
 
         callback01 = [b[0] for a, *b in self.callog if a == 'watch_timer'][-1]
         self.callog.append(('callback', TIMEOUT))
@@ -138,7 +138,7 @@ class TestCoroutineSwitching(unittest.TestCase):
         """ Uncatched error while switching.
         """
         with LogCapture() as lc:
-            coro = spawn(self.sample_corofunc, disp=self.disp)
+            coro = self.disp.spawn(self.sample_corofunc)
 
             callback01 = [b[0]
                           for a, *b in self.callog
@@ -179,21 +179,20 @@ class TestCoroutineSwitching(unittest.TestCase):
         )
 
     async def sample_corofunc2(self):
-        awaitable = ready(2, READ, disp=self.disp)
+        awaitable = ready(2, READ)
         self.callog.append(('sample:awaitable', awaitable))
         return_value = await awaitable
         self.callog.append(('sample:return_value', return_value))
 
         try:
-            return_value = await ready(5, READ, disp=self.disp)
+            return_value = await ready(5, READ)
             self.callog.append(('sample:return_value', return_value))
         except Exception as exc:
             self.callog.append(('sample:Exception', (exc
                                                      if type(exc) == 'type'
                                                      else type(exc))))
         try:
-            return_value = await ready(7, READ,
-                                       timeout=7.0, disp=self.disp)
+            return_value = await ready(7, READ, timeout=7.0)
             self.callog.append(('sample:return_value', return_value))
         except Exception as exc:
             self.callog.append(('sample:Exception', (exc
@@ -203,7 +202,7 @@ class TestCoroutineSwitching(unittest.TestCase):
     def test_coroutine_switch_with_timeout(self):
         """ A coroutine switches back by timeout.
         """
-        spawn(self.sample_corofunc2, disp=self.disp)
+        self.disp.spawn(self.sample_corofunc2)
 
         callback01 = [b[0] for a, *b in self.callog if a == 'watch_io'][-1]
         self.callog.append(('callback', READ))

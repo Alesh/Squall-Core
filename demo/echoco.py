@@ -3,8 +3,8 @@ import errno
 import socket
 import logging
 from squall.coroutine import ready,  READ, WRITE
-from squall.coroutine import start, stop, spawn, timeout_gen
-from squall.network import bind_sockets
+from squall.coroutine import start, stop, spawn
+from squall.utils import bind_sockets, timeout_gen
 
 logger = logging.getLogger('echoco.py')
 

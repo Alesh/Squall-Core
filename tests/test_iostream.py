@@ -117,7 +117,7 @@ class TestIOStream(unittest.TestCase):
         stream = IOStream(self.disp, MockAutoBuffer(self.callog, 260, 0))
         self.assertEqual(stream.block_size, 256)
         self.assertEqual(stream.buffer_size, 256*8)
-        spawn(self.sample_corofunc, stream, disp=self.disp)
+        self.disp.spawn(self.sample_corofunc, stream)
 
         callback01 = [b[0]
                       for a, *b in self.callog
@@ -163,7 +163,7 @@ class TestIOStream(unittest.TestCase):
         stream = IOStream(self.disp, MockAutoBuffer(self.callog, 1000, 50000))
         self.assertEqual(stream.block_size, 960)
         self.assertEqual(stream.buffer_size, 49920)
-        coro = spawn(self.sample_corofunc, stream, disp=self.disp)
+        coro = self.disp.spawn(self.sample_corofunc, stream)
 
         callback01 = [b[0]
                       for a, *b in self.callog
@@ -196,7 +196,7 @@ class TestIOStream(unittest.TestCase):
         stream = IOStream(self.disp, MockAutoBuffer(self.callog, 1000, 50000))
         self.assertEqual(stream.block_size, 960)
         self.assertEqual(stream.buffer_size, 49920)
-        spawn(self.sample_corofunc, stream, disp=self.disp)
+        self.disp.spawn(self.sample_corofunc, stream)
 
         callback01 = [b[0]
                       for a, *b in self.callog
@@ -220,7 +220,7 @@ class TestIOStream(unittest.TestCase):
         stream = IOStream(self.disp, MockAutoBuffer(self.callog, 2000, 0))
         self.assertEqual(stream.block_size, 1984)
         self.assertEqual(stream.buffer_size, 1984*8)
-        spawn(self.sample_corofunc, stream, disp=self.disp)
+        self.disp.spawn(self.sample_corofunc, stream)
 
         callback01 = [b[0]
                       for a, *b in self.callog

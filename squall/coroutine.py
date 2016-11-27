@@ -4,7 +4,6 @@ Implementation of event-driven async/await coroutine switching.
 import os
 import logging
 import threading
-from time import time
 import multiprocessing
 from functools import partial
 from collections import deque
@@ -25,24 +24,25 @@ class Dispatcher(object):
     """
 
     _tls = threading.local()
+    _tls.instance = None
+    _tls.stack = deque()
 
     def __init__(self):
-        self._stack = deque()
         self._event_disp = EventDispatcher()
 
-    class _LockAsCurrent(object):
-        """ It provides the finding of the current coroutine.
-        """
-        def __init__(self, stack, coro):
-            self._stack = stack
+    class _AsCurrent(object):
+
+        def __init__(self, disp, coro):
+            self._disp = disp
             self._coro = coro
 
         def __enter__(self):
-            self._stack.appendleft(self._coro)
+            type(self._disp)._tls.stack.appendleft((self._coro, self._disp))
             return self
 
         def __exit__(self, exc_type, exc_value, exc_traceback):
-            coro = self._stack.popleft()
+            coro, disp = type(self._disp)._tls.stack.popleft()
+            assert disp == self._disp
             assert coro == self._coro
             if exc_type is not None:
                 if exc_type not in (StopIteration, GeneratorExit):
@@ -51,16 +51,22 @@ class Dispatcher(object):
                                  exc_info=(exc_type, exc_value, exc_traceback))
                 return True
 
-    def _lock_as_current(self, coro):
-        return self._LockAsCurrent(self._stack, coro)
+    def _as_current(self, coro):
+        return self._AsCurrent(self, coro)
 
     @classmethod
     def instance(cls):
         """ Returns default (thread local) instance.
         """
-        if not hasattr(cls._tls, 'instance'):
-            setattr(cls._tls, 'instance', cls())
-        return getattr(cls._tls, 'instance')
+        if cls._tls.instance is None:
+            cls._tls.instance = cls()
+        return cls._tls.instance
+
+    @classmethod
+    def current(cls):
+        """ Returns a running coroutine and its dispatcher.
+        """
+        return cls._tls.stack[0] if len(cls._tls.stack) else (None, None)
 
     @property
     def running(self):
@@ -72,7 +78,7 @@ class Dispatcher(object):
         """ Creates a coroutine created from `corofunc` and given parameters.
         """
         coro = corofunc(*args, **kwargs)
-        with self._lock_as_current(coro):
+        with self._as_current(coro):
             coro.send(None)
         return coro
 
@@ -100,9 +106,8 @@ class Dispatcher(object):
 class _Awaitable(object):
     """ Create awaitable objects which switches back by call..
     """
-    def __init__(self, disp, cancel, setup, *args, **kwargs):
-        self._coro = current(disp=disp)
-        self._lock_as_current = disp._lock_as_current
+    def __init__(self, cancel, setup, *args, **kwargs):
+        self._coro, self._disp = Dispatcher.current()
         self._cancel = partial(cancel, self)
         self._has_timeout = 'timeout' in kwargs
         self._setup = partial(setup, self, *args, **kwargs)
@@ -119,7 +124,7 @@ class _Awaitable(object):
 
     def __call__(self, event, payload=None):
         self._cancel()
-        with self._lock_as_current(self._coro):
+        with self._disp._as_current(self._coro):
             if not event & (ERROR | CLEANUP):
                 if self._has_timeout and event & TIMEOUT:
                     self._coro.throw(TimeoutError("I/O timed out"))
@@ -149,11 +154,10 @@ class IOStream(object):
     def __init__(self, disp, autobuff):
         assert isinstance(disp, Dispatcher)
         assert isinstance(autobuff, abc.AutoBuffer)
-        self._disp = disp
-        self._event_disp = disp._event_disp
         self._autobuff = autobuff
         self._finalize = False
         self._closed = False
+        self._disp = disp
 
     @property
     def closed(self):
@@ -185,6 +189,9 @@ class IOStream(object):
         Awaitable returns requested numbers of bytes
         or raises `TimeoutError` or `IOError`.
         """
+        _, disp = Dispatcher.current()
+        assert disp == self._disp
+        event_disp = disp._event_disp
         assert isinstance(number, int)
         number = (number
                   if number > 0 and number <= self.buffer_size
@@ -194,13 +201,13 @@ class IOStream(object):
 
         def cancel(callback):
             if timeout > 0:
-                self._event_disp.cancel(callback)
+                event_disp.cancel(callback)
             self._autobuff.cancel()
 
         def setup(callback, number, timeout):
             result = True
             if timeout > 0:
-                result = self._event_disp.watch_timer(callback, timeout)
+                result = event_disp.watch_timer(callback, timeout)
             if result:
                 result = self._autobuff.watch_read_bytes(callback, number)
             if not result:
@@ -211,8 +218,7 @@ class IOStream(object):
             raise ConnectionError("Connection has closed")
         if timeout < 0:
             raise TimeoutError("I/O timed out")
-        return _Awaitable(self._disp, cancel,
-                          setup, number, timeout=timeout)
+        return _Awaitable(cancel, setup, number, timeout=timeout)
 
     def read_until(self, delimiter, max_number=None, timeout=None):
         """ Returns awaitable which switch back when a autobuffer has
@@ -221,6 +227,9 @@ class IOStream(object):
         Awaitable returns block of bytes ends with `delimiter` or
         `max_number` of bytes or raises `TimeoutError` or `IOError`.
         """
+        _, disp = Dispatcher.current()
+        assert disp == self._disp, "{} != {}".format(disp, self._disp)
+        event_disp = disp._event_disp
         assert isinstance(delimiter, bytes)
         max_number = max_number or 0
         assert isinstance(max_number, int)
@@ -232,13 +241,13 @@ class IOStream(object):
 
         def cancel(callback):
             if timeout > 0:
-                self._event_disp.cancel(callback)
+                event_disp.cancel(callback)
             self._autobuff.cancel()
 
         def setup(callback, delimiter, max_number, timeout):
             result = True
             if timeout > 0:
-                result = self._event_disp.watch_timer(callback, timeout)
+                result = event_disp.watch_timer(callback, timeout)
             if result:
                 result = self._autobuff.watch_read_until(callback, delimiter,
                                                          max_number)
@@ -250,8 +259,8 @@ class IOStream(object):
             raise ConnectionError("Connection has closed")
         if timeout < 0:
             raise TimeoutError("I/O timed out")
-        return _Awaitable(self._disp, cancel,
-                          setup, delimiter, max_number, timeout=timeout)
+        return _Awaitable(cancel, setup,
+                          delimiter, max_number, timeout=timeout)
 
     def flush(self, timeout=None):
         """ Returns awaitable which switch back when a autobuffer will
@@ -259,18 +268,21 @@ class IOStream(object):
         Awaitable returns insignificant value
         or raises `TimeoutError` or `IOError`.
         """
+        _, disp = Dispatcher.current()
+        assert disp == self._disp
+        event_disp = disp._event_disp
         timeout = timeout or 0
         assert isinstance(timeout, (int, float))
 
         def cancel(callback):
             if timeout > 0:
-                self._event_disp.cancel(callback)
+                event_disp.cancel(callback)
             self._autobuff.cancel()
 
         def setup(callback, timeout):
             result = True
             if timeout > 0:
-                result = self._event_disp.watch_timer(callback, timeout)
+                result = event_disp.watch_timer(callback, timeout)
             if result:
                 result = self._autobuff.watch_flush(callback)
             if not result:
@@ -281,8 +293,7 @@ class IOStream(object):
             raise ConnectionError("Connection has closed")
         if timeout < 0:
             raise TimeoutError("I/O timed out")
-        return _Awaitable(self._disp, cancel,
-                          setup, timeout=timeout)
+        return _Awaitable(cancel, setup, timeout=timeout)
 
     def write(self, data):
         """ Puts `data` bytes to outcoming buffer.
@@ -320,25 +331,16 @@ def start(*, disp=None, worker=1,
     if worker < 1:
         worker = multiprocessing.cpu_count()
     if worker > 1:
+        processes = dict()
         main_disp = Dispatcher()
 
-        async def process_holder():
+        for _ in range(worker):
             process = multiprocessing.Process(target=disp.start, daemon=True)
             process.start()
-            try:
-                await ready(process.sentinel, READ, disp=main_disp)
-            except IOError:
-                pass
-            # finally:
-            #     if main_disp.running:
-            #         logging.error("Child process: {} has terminated."
-            #                       "".format(process.pid))
-
-        for _ in range(worker):
-            main_disp.spawn(process_holder)
+            processes[process.sentinel] = process
 
         async def terminator(sigint):
-            await signal(sigint, disp=main_disp)
+            await signal(sigint)
             main_disp.stop()
 
         main_disp.spawn(terminator, SIGTERM)
@@ -360,28 +362,19 @@ def spawn(corofunc, *args, **kwargs):
     """ Creates a coroutine created from `corofunc` and given parameters.
     """
     disp = kwargs.get('disp', Dispatcher.instance())
-    coro = corofunc(*args, **kwargs)
-    with disp._lock_as_current(coro):
-        coro.send(None)
-    return coro
+    return disp.spawn(corofunc, *args, **kwargs)
 
 
-def current(*, disp=None):
-    """ Returns current coroutine.
-    """
-    disp = disp or Dispatcher.instance()
-    return disp._stack[0] if len(disp._stack) else None
-
-
-def sleep(seconds, *, disp=None):
+def sleep(seconds):
     """ Returns awaitable which switch back when given time expired.
     """
-    disp = disp or Dispatcher.instance()
-    assert isinstance(disp, Dispatcher)
+    _, disp = Dispatcher.current()
+    assert disp is not None
+    event_disp = disp._event_disp
     assert isinstance(seconds, (int, float))
     seconds = seconds if seconds > 0 else 0
-    return _Awaitable(disp, disp._event_disp.cancel,
-                      disp._event_disp.watch_timer, seconds)
+    return _Awaitable(event_disp.cancel,
+                      event_disp.watch_timer, seconds)
 
 
 def ready(fd, events, *, timeout=None, disp=None):
@@ -389,8 +382,9 @@ def ready(fd, events, *, timeout=None, disp=None):
     with given `fd` will be ready for reading and/or writing or
     timeout expired if set.
     """
-    disp = disp or Dispatcher.instance()
-    assert isinstance(disp, Dispatcher)
+    _, disp = Dispatcher.current()
+    assert disp is not None
+    event_disp = disp._event_disp
     assert isinstance(fd, int) and fd >= 0
     assert isinstance(events, int)
     assert events & (READ | WRITE)
@@ -400,16 +394,16 @@ def ready(fd, events, *, timeout=None, disp=None):
     def setup(callback, fd, events, timeout):
         result = True
         if timeout > 0:
-            result = disp._event_disp.watch_timer(callback, timeout)
+            result = event_disp.watch_timer(callback, timeout)
         if result:
-            result = disp._event_disp.watch_io(callback, fd, events)
+            result = event_disp.watch_io(callback, fd, events)
         if not result:
-            disp._event_disp.cance(callback)
+            event_disp.cance(callback)
         return result
 
     if timeout < 0:
         raise TimeoutError("I/O timed out")
-    return _Awaitable(disp, disp._event_disp.cancel,
+    return _Awaitable(event_disp.cancel,
                       setup, fd, events, timeout=timeout)
 
 
@@ -417,24 +411,9 @@ def signal(signum, *, disp=None):
     """ Returns awaitable which switch back when the systen signal
     with given `signum` will be received.
     """
-    disp = disp or Dispatcher.instance()
-    assert isinstance(disp, Dispatcher)
+    _, disp = Dispatcher.current()
+    assert disp is not None
+    event_disp = disp._event_disp
     assert isinstance(signum, int) and signum > 0
-    return _Awaitable(disp, disp._event_disp.cancel,
-                      disp._event_disp.watch_signal, signum)
-
-
-# utility functions
-
-
-def timeout_gen(timeout):
-    """ Timeouts generator.
-    """
-    assert ((isinstance(timeout, (int, float)) and timeout >= 0) or
-            timeout is None)
-    timeout = float(timeout or 0)
-    deadline = time() + timeout if timeout else None
-    while True:
-        left_time = deadline - time()
-        yield (None if deadline is None
-               else (left_time if left_time > 0 else -1))
+    return _Awaitable(event_disp.cancel,
+                      event_disp.watch_signal, signum)

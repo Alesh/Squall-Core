@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from squall.coroutine import Dispatcher
-from squall.coroutine import current, spawn, start, stop
+from squall.coroutine import spawn, start, stop
 from squall.coroutine import sleep, ready, READ, WRITE
 
 
@@ -19,7 +19,7 @@ class TestConcurrency(unittest.TestCase):
         self.callog.clear()
 
     def tearDown(self):
-        delattr(Dispatcher._tls, 'instance')
+        Dispatcher._tls.instance = None
 
     def test_timing(self):
         """ Checks timing of coroutines switching.
@@ -28,27 +28,31 @@ class TestConcurrency(unittest.TestCase):
         async def test01():
             while True:
                 await sleep(0.1)
-                self.callog.append((current().__name__, 'T', 1))
+                coroname = Dispatcher.current()[0].__name__
+                self.callog.append((coroname, 'T', 1))
         coro01 = spawn(test01)
         self.callog.append((coro01.__name__, 'C', 1))
 
         async def test02():
             while True:
                 await sleep(0.21)
-                self.callog.append((current().__name__, 'T', 2))
+                coroname = Dispatcher.current()[0].__name__
+                self.callog.append((coroname, 'T', 2))
         coro02 = spawn(test02)
         self.callog.append((coro02.__name__, 'C', 2))
 
         async def test05():
             await sleep(0.55)
-            self.callog.append((current().__name__, 'T', 5))
+            coroname = Dispatcher.current()[0].__name__
+            self.callog.append((coroname, 'T', 5))
             coro02.close()
         coro05 = spawn(test05)
         self.callog.append((coro05.__name__, 'C', 5))
 
         async def test07():
             await sleep(0.77)
-            self.callog.append((current().__name__, 'T', 7))
+            coroname = Dispatcher.current()[0].__name__
+            self.callog.append((coroname, 'T', 7))
             stop()
         coro07 = spawn(test07)
         self.callog.append((coro07.__name__, 'C', 7))
