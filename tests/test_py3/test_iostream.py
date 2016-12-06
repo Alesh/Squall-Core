@@ -2,7 +2,8 @@ import errno
 import unittest
 
 from squall import abc
-from squall.coroutine import spawn, Dispatcher, IOStream
+from squall.iostream import IOStream
+from squall.coroutine import Dispatcher
 from squall.coroutine import READ, WRITE, TIMEOUT, ERROR
 
 
@@ -12,11 +13,11 @@ class MockEventDispatcher(object):
     def __init__(self, callog):
         self.callog = callog
 
-    def watch_timer(self, callback, seconds, once=False):
+    def watch_timer(self, callback, seconds):
         self.callog.append(('watch_timer', callback, seconds))
         return True
 
-    def watch_io(self, callback, fd, events, once=False):
+    def watch_io(self, callback, fd, events):
         self.callog.append(('watch_io', callback, fd, events))
         return True
 
@@ -41,6 +42,14 @@ class MockAutoBuffer(abc.AutoBuffer):
     @property
     def closed(self):
         return self._closed
+
+    @property
+    def reading(self):
+        return True
+
+    @property
+    def writing(self):
+        return False
 
     @property
     def block_size(self):
@@ -88,7 +97,7 @@ class TestIOStream(unittest.TestCase):
         self.callog = list()
         self.disp = Dispatcher()
         self.disp._event_disp = MockEventDispatcher(self.callog)
-        super(TestIOStream, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     async def sample_corofunc(self, stream):
         awaitable = stream.read_bytes(4*1024)
@@ -97,7 +106,8 @@ class TestIOStream(unittest.TestCase):
         self.callog.append(('sample:return_value', return_value))
         try:
             return_value = await stream.read_until(b'\r\n',
-                                                   64*1024, timeout=5.0)
+                                                   max_number=64*1024,
+                                                   timeout=5.0)
             self.callog.append(('sample:return_value', return_value))
         except Exception as exc:
             self.callog.append(('sample:Exception', (exc

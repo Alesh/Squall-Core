@@ -6,20 +6,21 @@ if sys.version_info[:2] < (3, 5):
     raise NotImplementedError("Required python version 3.5 or greater")
 
 settings = {
-    'name': 'squall',
-    'version': '0.2.dev4',
+    'name': 'Squall',
+    'version': '0.2.dev5',
     'namespace_packages': ['squall'],
     'package_dir': {'': 'python'},
     'py_modules': ['squall.abc', 'squall.coroutine',
                    'squall.network', 'squall.utils'],
     'author': "Alexey Poryadin",
     'author_email': "alexey.poryadin@gmail.com",
-    'description': "The Squall is a framework which implements "
+    'description': "The Squall is a modules set which implements "
                    "the cooperative multitasking based on event-driven "
                    "switching async/await coroutines.",
     'tests_require': ['nose', 'testfixtures'],
     'test_suite': 'nose.collector',
-    'install_requires': []
+    'install_requires': [],
+    'zip_safe': False,
 }
 
 settings['ext_modules'] = [

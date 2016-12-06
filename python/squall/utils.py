@@ -8,17 +8,23 @@ from time import time
 logger = logging.getLogger(__name__)
 
 
-def timeout_gen(timeout):
-    """ Timeouts generator.
+class timeout_gen(object):
+    """ Timeout generator
     """
-    assert ((isinstance(timeout, (int, float)) and timeout >= 0) or
-            timeout is None)
-    timeout = float(timeout or 0)
-    deadline = time() + timeout if timeout else None
-    while True:
-        left_time = deadline - time()
-        yield (None if deadline is None
-               else (left_time if left_time > 0 else -1))
+    def __init__(self, initial_timeout):
+        assert (isinstance(initial_timeout, (int, float)) or
+                initial_timeout is None)
+        self.deadline = None
+        if initial_timeout is not None:
+            self.deadline = time() + initial_timeout
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.deadline is not None:
+            value = self.deadline - time()
+            return value if value >= 0 else -1
 
 
 def bind_sockets(port, address=None, *, backlog=128,
@@ -46,10 +52,12 @@ def bind_sockets(port, address=None, *, backlog=128,
     return results
 
 
-def pretty_addr(ip):
-    """ Returns a pretty string representation of a given IP address.
-    """
-    if len(ip) > 2:
-        return "[{}]:{}".format(*ip[:2])
-    else:
-        return "{}:{}".format(*ip)
+class Addr(tuple):
+
+    def __str__(self):
+        """ Returns a pretty string representation of a given IP address.
+        """
+        if len(self) > 2:
+            return "[{}]:{}".format(*self[:2])
+        else:
+            return "{}:{}".format(*self)

@@ -33,7 +33,7 @@ class TestCoroutineSwitching(unittest.TestCase):
         self.callog = list()
         self.disp = Dispatcher()
         self.disp._event_disp = MockEventDispatcher(self.callog)
-        super(TestCoroutineSwitching, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def setUp(self):
         self.callog.clear()

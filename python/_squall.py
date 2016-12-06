@@ -433,6 +433,18 @@ class AutoBuffer(abc.AutoBuffer):
             return None
 
     @property
+    def reading(self):
+        """ Returns `True` if this is reading data from device.
+        """
+        return self._events & READ
+
+    @property
+    def writing(self):
+        """ Returns `True` if this is writing data from device.
+        """
+        return self._events & WRITE
+
+    @property
     def closed(self):
         """ Returns `True` if this is released.
         """
@@ -511,8 +523,7 @@ class SocketAutoBuffer(AutoBuffer):
     """
     def __init__(self, disp, sock, block_size=1024,  max_size=16384):
         self._sock = sock
-        super(SocketAutoBuffer, self).__init__(disp, sock.fileno(),
-                                               block_size,  max_size)
+        super().__init__(disp, sock.fileno(), block_size,  max_size)
 
     def _read_block(self, size):
         """Should be read and return a given numbers of bytes

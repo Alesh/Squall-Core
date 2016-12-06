@@ -183,6 +183,18 @@ class AutoBuffer(metaclass=ABCMeta):
 
     @property
     @abstractmethod
+    def reading(self):
+        """ Returns `True` if this is reading data from device.
+        """
+
+    @property
+    @abstractmethod
+    def writing(self):
+        """ Returns `True` if this is writing data from device.
+        """
+
+    @property
+    @abstractmethod
     def closed(self):
         """ Returns `True` if this is released.
         """

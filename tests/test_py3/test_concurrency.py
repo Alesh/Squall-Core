@@ -13,7 +13,7 @@ class TestConcurrency(unittest.TestCase):
     """
     def __init__(self, *args, **kwargs):
         self.callog = list()
-        super(TestConcurrency, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def setUp(self):
         self.callog.clear()

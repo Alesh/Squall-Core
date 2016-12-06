@@ -14,7 +14,7 @@ class TestEventDispatcher(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         self.callog = list()
-        super(TestEventDispatcher, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def setUp(self):
         self.callog.clear()
