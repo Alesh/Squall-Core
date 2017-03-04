@@ -1,0 +1,2 @@
+""" Squall core module
+"""

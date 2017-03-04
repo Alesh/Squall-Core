@@ -1,0 +1,9 @@
+.idea/
+.py35/
+.py36
+build/
+cmake-build*/
+*.egg-info/
+*.so
+__pycache__
+~*
