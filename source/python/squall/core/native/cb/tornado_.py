@@ -1,5 +1,6 @@
 """ Module of callback classes based on tornado
 """
+import logging
 import signal
 from socket import SocketType, SHUT_RDWR
 from time import time
@@ -7,7 +8,6 @@ from time import time
 from squall.core.native.cb.abc import AutoBuffer as AbcAutoBuffer
 from squall.core.native.cb.abc import EventLoop as AbcEventLoop
 from squall.core.native.cb.abc import SocketAcceptor as AbcSocketAcceptor
-from squall.core.utils import logger
 from tornado.ioloop import IOLoop
 from tornado.netutil import add_accept_handler, bind_sockets as tornado_bind_sockets
 
@@ -26,7 +26,7 @@ class EventLoop(AbcEventLoop):
 
     def start(self):
         """ See more: `AbcEventLoop.start` """
-        logger.info("Using tornado based callback classes")
+        logging.info("Using tornado based callback classes")
         self._loop.start()
 
     def stop(self):

@@ -1,9 +1,6 @@
 """ Utility functions and classes
 """
-import logging
 from time import time
-
-logger = logging.getLogger('squall.core')
 
 
 class timeout_gen(object):

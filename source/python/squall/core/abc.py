@@ -2,11 +2,24 @@
 """
 import sys
 from abc import ABCMeta, abstractmethod
+
 try:
     from typing import Coroutine, Awaitable, Callable
 except ImportError:
     from collections.abc import Coroutine, Awaitable, Callable
 
+
+def _check_methods(C, *methods):
+    mro = C.__mro__
+    for method in methods:
+        for B in mro:
+            if method in B.__dict__:
+                if B.__dict__[method] is None:
+                    return NotImplemented
+                break
+        else:
+            return NotImplemented
+    return True
 
 
 class Switcher(metaclass=ABCMeta):
@@ -23,6 +36,52 @@ class Switcher(metaclass=ABCMeta):
         """ Sends some value into coroutine to switches its running back.
         Returns `True` if coroutine is continue running and `False` if has finished.
         """
+
+class Future(metaclass=ABCMeta):
+    """ Abstract base class of the future object (like `concurrent.futures.Future`)
+    """
+
+    def cancel(self):
+        """ Cancel the future if possible.
+        See more: `concurrent.futures.Future.cancel`
+        """
+
+    def cancelled(self):
+        """ Return True if the future was cancelled.
+        See more: `concurrent.futures.Future.cancel`
+        """
+
+    def running(self):
+        """ Return True if the future is currently executing.
+        See more: `concurrent.futures.Future.running`
+        """
+
+    def done(self):
+        """ Return True of the future was cancelled or finished executing.
+        See more: `concurrent.futures.Future.done`
+        """
+
+    def add_done_callback(self, callback):
+        """ Attaches a callable that will be called when the future finishes.
+         See more: `concurrent.futures.Future.add_done_callback`
+        """
+
+    def result(self, timeout=None):
+        """ Return the result of the call that the future represents.
+         See more: `concurrent.futures.Future.result`
+        """
+
+    def exception(self, timeout=None):
+        """ Return the exception raised by the call that the future represents.
+         See more: `concurrent.futures.Future.exception`
+        """
+
+    @classmethod
+    def __subclasshook__(cls, C):
+        if cls is Future:
+            return _check_methods(C, 'cancel', 'cancelled', 'running', 'done',
+                                  'add_done_callback', 'result', 'exception')
+        return NotImplemented
 
 
 class Dispatcher(Switcher):
@@ -70,6 +129,13 @@ class Dispatcher(Switcher):
     def signal(self, signum: int) -> Awaitable:
         """ Returns the awaitable that switches current coroutine back
         when received the system signal with a given `signum`.
+        """
+
+    @abstractmethod
+    def wait(self, future: Future, *, timeout: float = None) -> Awaitable:
+        """ Returns the awaitable that switches current coroutine back
+        when the given `future` has done.
+        It will raise `TimeoutError` if `timeout` is set and elapsed.
         """
 
 

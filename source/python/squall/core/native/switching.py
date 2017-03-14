@@ -1,10 +1,11 @@
+import logging
 from collections import deque
 from collections.abc import Coroutine, Callable
 from functools import partial
 
-from squall.core.abc import Switcher as AbcSwitcher
+from squall.core.abc import Future
 from squall.core.abc import Dispatcher as AbcDispatcher
-from squall.core.utils import logger
+from squall.core.abc import Switcher as AbcSwitcher
 
 try:
     from squall.core.native.cb.tornado_ import EventLoop
@@ -35,8 +36,8 @@ class Switcher(AbcSwitcher):
             return True
         except BaseException as exc:
             if not isinstance(exc, (StopIteration, GeneratorExit)):
-                logger.exception("Uncaught exception when switch({}, {})"
-                                 "".format(coro, value))
+                logging.exception("Uncaught exception when switch({}, {})"
+                                  "".format(coro, value))
         finally:
             self._current.popleft()
         return False
@@ -162,5 +163,47 @@ class Dispatcher(AbcDispatcher, Switcher):
 
         def cancel():
             self._loop.cancel_signal(*args)
+
+        return SwitchedCoroutine(self, setup, cancel)
+
+    def wait(self, future: Future, *, timeout=None):
+        """ See more: `AbcDispatcher.wait` """
+        args = []
+        timeout = timeout or 0
+        timeout = timeout if timeout >= 0 else -1
+        assert isinstance(timeout, (int, float))
+        assert isinstance(future, Future)
+
+        def setup(callback):
+            timeout_exc = TimeoutError("I/O timeout")
+            if timeout < 0:
+                return timeout_exc
+            if future.done():
+                try:
+                    result = future.result()
+                    return result if result is not None else True
+                except BaseException as exc:
+                    return exc
+
+            def done_callback(future):
+                try:
+                    result = future.result()
+                    callback(result if result is not None else True)
+                except BaseException as exc:
+                    callback(exc)
+
+            future.add_done_callback(done_callback)
+            args.append(future)
+            if timeout > 0:
+                args.append(self._loop.setup_timeout(callback, timeout, timeout_exc))
+            else:
+                args.append(None)
+
+        def cancel():
+            future, timeout = args
+            if future.running():
+                future.cancel()
+            if timeout is not None:
+                self._loop.cancel_timeout(timeout)
 
         return SwitchedCoroutine(self, setup, cancel)

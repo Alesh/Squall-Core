@@ -1,9 +1,14 @@
+import concurrent.futures
 import os
 import os.path
 import tempfile
+import time
 
 import pytest
 from squall.core import Dispatcher as API
+from squall.core.abc import Future
+
+Future.register(concurrent.futures.Future)
 
 
 @pytest.yield_fixture
@@ -104,7 +109,7 @@ def test_ready_io(callog, fifo_files):
         try:
             while True:
                 try:
-                    result =  await api.ready(fifo, api.READ, timeout=0.31)
+                    await api.ready(fifo, api.READ, timeout=0.31)
                     data = os.read(fifo, 1024)
                     callog.append(data)
                     if data == b'BBB':
@@ -140,6 +145,48 @@ def test_ready_io(callog, fifo_files):
         '*', b'BBB', 'RX>',
         '*', 'TX>',
         '*', '>>']
+
+
+@pytest.yield_fixture
+def executor():
+    _executor = concurrent.futures.ProcessPoolExecutor()
+    yield _executor
+    _executor.shutdown()
+
+
+def func_sleep(seconds):
+    time.sleep(seconds)
+    return 'DONE!'
+
+
+def test_futures(callog, executor):
+    async def corofuncFT(api, executor, seconds):
+        callog.append('<FT')
+        try:
+            future = executor.submit(func_sleep, seconds)
+            result = await api.wait(future)
+            callog.append(result)
+        finally:
+            callog.append('FT>')
+
+    async def corofunc(api):
+        cnt = 0
+        callog.append('<<')
+        while cnt < 5:
+            await api.sleep(0.1)
+            callog.append('*')
+            cnt += 1
+            if cnt == 1:
+                api.spawn(corofuncFT, executor, 0.3)
+        api.stop()
+        callog.append('>>')
+
+    api = API()
+    api.spawn(corofunc)
+    api.start()
+
+    print(callog)
+    assert callog == ['<<', '*', '<FT', '*', '*', '*', 'DONE!', 'FT>', '*', '>>']
 
 
 if __name__ == '__main__':

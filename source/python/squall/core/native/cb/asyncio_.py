@@ -2,14 +2,14 @@
 """
 import asyncio
 import errno
+import logging
 import os
 import socket
 from socket import SocketType
 
-from squall.core.native.cb.abc import EventLoop as AbcEventLoop
 from squall.core.native.cb.abc import AutoBuffer as AbcAutoBuffer
+from squall.core.native.cb.abc import EventLoop as AbcEventLoop
 from squall.core.native.cb.abc import SocketAcceptor as AbcSocketAcceptor
-from squall.core.utils import logger
 
 
 class EventLoop(AbcEventLoop):
@@ -26,7 +26,7 @@ class EventLoop(AbcEventLoop):
 
     def start(self):
         """ See more: `AbcEventLoop.start` """
-        logger.info("Using asyncio based callback classes")
+        logging.info("Using asyncio based callback classes")
         self._loop.run_forever()
 
     def stop(self):
@@ -231,7 +231,7 @@ class SocketAcceptor(AbcSocketAcceptor):
                             return
                         if errno_ == errno.ECONNABORTED:
                             continue
-                        logger.error("Exception while listening: {}".format(e))
+                        logging.error("Exception while listening: {}".format(e))
 
         self._fd = socket_.fileno()
         self._loop = event_loop._loop
