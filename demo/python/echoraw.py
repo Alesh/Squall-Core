@@ -23,7 +23,6 @@ async def echo_handler(api, connection_socket, addr):
                 connection_socket.send(data)
             else:
                 raise ConnectionResetError("Connection reset by peer")
-            break
     except IOError as exc:
         logging.warning("[{}]Connection fail: {}".format(addr, exc))
 
@@ -107,7 +106,7 @@ def bind_sockets(port, host=None, backlog=128):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
 
     api = API()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077

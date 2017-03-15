@@ -2,7 +2,8 @@ from collections import deque
 from collections.abc import Coroutine, Callable
 from functools import partial
 
-from squall.core import abc
+from squall.core.abc import Switcher as AbcSwitcher
+from squall.core.abc import Dispatcher as AbcDispatcher
 from squall.core.utils import logger
 
 try:
@@ -11,7 +12,7 @@ except ImportError:
     from squall.core.native.cb.asyncio_ import EventLoop
 
 
-class Switcher(abc.Switcher):
+class Switcher(AbcSwitcher):
     """ Coroutine switcher
     """
 
@@ -20,11 +21,11 @@ class Switcher(abc.Switcher):
 
     @property
     def current(self) -> Coroutine:
-        """ See: `abc.Switcher.current` """
+        """ See more: `AbcSwitcher.current` """
         return self._current[0] if len(self._current) else None
 
     def switch(self, coro: Coroutine, value):
-        """ See: `abc.Switcher.switch` """
+        """ See more: `AbcSwitcher.switch` """
         try:
             self._current.appendleft(coro)
             if isinstance(value, BaseException):
@@ -74,7 +75,7 @@ class SwitchedCoroutine(Coroutine):
         super().throw(typ, val, tb)
 
 
-class Dispatcher(abc.Dispatcher, Switcher):
+class Dispatcher(AbcDispatcher, Switcher):
     """ Coroutine event dispatcher / switcher
     """
 
@@ -84,31 +85,31 @@ class Dispatcher(abc.Dispatcher, Switcher):
 
     @property
     def READ(self):
-        """ See: `abc.Dispatcher.READ` """
+        """ See more: `AbcDispatcher.READ` """
         return self._loop.READ
 
     @property
     def WRITE(self):
-        """ See: `abc.Dispatcher.WRITE` """
+        """ See more: `AbcDispatcher.WRITE` """
         return self._loop.WRITE
 
     def spawn(self, corofunc, *args, **kwargs):
-        """ See: `abc.Dispatcher.spawn` """
+        """ See more: `AbcDispatcher.spawn` """
         coro = corofunc(self, *args, **kwargs)
         assert isinstance(coro, Coroutine)
         self.switch(coro, None)
         return coro
 
     def start(self):
-        """ See: `abc.Dispatcher.start` """
+        """ See more: `AbcDispatcher.start` """
         return self._loop.start()
 
     def stop(self):
-        """ See: `abc.Dispatcher.stop` """
+        """ See more: `AbcDispatcher.stop` """
         return self._loop.stop()
 
     def sleep(self, seconds=None):
-        """ See: `abc.Dispatcher.sleep` """
+        """ See more: `AbcDispatcher.sleep` """
         args = []
         seconds = seconds or 0
         seconds = seconds if seconds > 0 else 0
@@ -123,7 +124,7 @@ class Dispatcher(abc.Dispatcher, Switcher):
         return SwitchedCoroutine(self, setup, cancel)
 
     def ready(self, fd, events, *, timeout=None):
-        """ See: `abc.Dispatcher.ready` """
+        """ See more: `AbcDispatcher.ready` """
         args = []
         timeout = timeout or 0
         timeout = timeout if timeout >= 0 else -1
@@ -151,7 +152,7 @@ class Dispatcher(abc.Dispatcher, Switcher):
         return SwitchedCoroutine(self, setup, cancel)
 
     def signal(self, signum):
-        """ See: `abc.Dispatcher.signal` """
+        """ See more: `AbcDispatcher.signal` """
         args = []
         signum = signum or 0
         assert isinstance(signum, int) and signum > 0

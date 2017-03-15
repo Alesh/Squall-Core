@@ -1,10 +1,11 @@
 """ Abstract base classes (Interfaces)
 """
+import sys
 from abc import ABCMeta, abstractmethod
 try:
-    from typing import Coroutine, Awaitable
+    from typing import Coroutine, Awaitable, Callable
 except ImportError:
-    from collections.abc import Coroutine, Awaitable
+    from collections.abc import Coroutine, Awaitable, Callable
 
 
 
@@ -69,4 +70,108 @@ class Dispatcher(Switcher):
     def signal(self, signum: int) -> Awaitable:
         """ Returns the awaitable that switches current coroutine back
         when received the system signal with a given `signum`.
+        """
+
+
+class IOStream(metaclass=ABCMeta):
+    """ Abstract base class of async I/O stream
+    """
+
+    @property
+    @abstractmethod
+    def active(self) -> bool:
+        """ Returns `True` if this stream is active (not closed). """
+
+    @property
+    @abstractmethod
+    def block_size(self) -> int:
+        """ Size of block of data reads/writes to the I/O device at once. """
+
+    @property
+    @abstractmethod
+    def buffer_size(self) -> int:
+        """ Maximum size of the read/write buffers. """
+
+    @abstractmethod
+    def read(self, max_bytes: int) -> bytes:
+        """ Read bytes from incoming buffer how much is there, but not more max_bytes.
+        """
+
+    @abstractmethod
+    def read_exactly(self, num_bytes: int, *, timeout: float = None) -> Awaitable:
+        """ Asynchronously read a number of bytes.
+        Raised TimeoutError if `timeout` is defined and elapsed.
+        Raised IOError if occurred I/O error.
+        """
+
+    @abstractmethod
+    def read_until(self, delimiter: bytes, *, max_bytes: int = None, timeout: float = None) -> Awaitable:
+        """ Asynchronously read until we have found the given delimiter.
+        The result includes all the data read including the delimiter.
+        Raised TimeoutError if `timeout` is defined and elapsed.
+        Raised BufferError if incomming buffer if full but delemiter not found.
+        Raised IOError if occurred I/O error.
+        """
+
+    @abstractmethod
+    def flush(self, *, timeout: float = None) -> Awaitable:
+        """ Asynchronously drain an outcoming buffer of this stream.
+        Raised TimeoutError if `timeout` is defined and elapsed.
+        Raised IOError if occurred I/O error.
+        """
+
+    @abstractmethod
+    def write(self, data: bytes) -> int:
+        """ Writes data to the outcoming buffer of this stream.
+        Returns number of bytes what has been written.
+        """
+
+    @abstractmethod
+    def close(self):
+        """ Closes stream and associated resources.
+        """
+
+if sys.version_info[:2] > (3, 5):
+    StreamHandler = Callable[[Dispatcher, IOStream, str], Coroutine]
+else:
+    StreamHandler = Callable
+
+
+class TCPServer(metaclass=ABCMeta):
+    """ Abstract base class of the async TCP Server
+    """
+
+    @abstractmethod
+    def __init__(self, stream_handler: StreamHandler,
+                 block_size: int = 1024, buffer_size: int = 64 * 1024):
+        """ Constructor """
+
+    @property
+    @abstractmethod
+    def active(self) -> bool:
+        """ Returns `True` if this server is active (not stopped). """
+
+    @abstractmethod
+    def bind(self, port: int, address: str = None, *, backlog: int = 128, reuse_port: bool = False):
+        """ Binds this server to the given port on the given address.
+        """
+
+    @abstractmethod
+    def unbind(self, port: int, address: str = None):
+        """ Unbinds this server from the given port on the given address.
+        """
+
+    @abstractmethod
+    def before_start(self, disp: Dispatcher):
+        """ Called before starting this server.
+        May be overridden to initialize other coroutines there."""
+
+    @abstractmethod
+    def start(self, num_processes: int = 1):
+        """ Starts this server.
+        """
+
+    @abstractmethod
+    def stop(self):
+        """ Stops this server.
         """
