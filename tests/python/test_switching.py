@@ -1,6 +1,7 @@
 import logging
+
 import pytest
-from squall.core.native.switching import CoroutineSwitcher, SwitchedCoroutine
+from squall.core.native.switching import Switcher, SwitchedCoroutine
 
 
 @pytest.yield_fixture
@@ -9,7 +10,7 @@ def callog():
     yield _callog
 
 
-class MockSwitcher(CoroutineSwitcher):
+class MockSwitcher(Switcher):
     """ Mock coroutine switcher """
 
     def __init__(self, callog):
@@ -57,7 +58,7 @@ def test_SwitchedCoroutine_close(callog):
                       lambda *args: callog.append('setup'),
                       lambda *args: callog.append('cancel'))
     switcher.switch(coro, None)
-    switcher.close(coro)
+    switcher.switch(coro, GeneratorExit())
 
     print(callog)
     assert callog == ['setup', ('switch', None, True),
@@ -143,3 +144,7 @@ def test_SwitchedCoroutine_exc_in_setup(callog, caplog):
                       'cancel', ('catch', ValueError), ('result', None),
                       ('switch', None, False),
                       ('switch', 100, False)]
+
+
+if __name__ == '__main__':
+    pytest.main([__file__])

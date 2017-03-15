@@ -1,6 +1,8 @@
 .idea/
 .py35/
-.py36
+.py36/
+.eggs/
+.cache/
 build/
 cmake-build*/
 *.egg-info/
