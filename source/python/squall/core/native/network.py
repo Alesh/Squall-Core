@@ -66,10 +66,11 @@ class TCPServer(AbcTCPServer):
 
         def switch(self, coro, value):
             """ See more: `AbcSwitcher.switch` """
-            still_active = self._disp.switch(coro, value)
-            if not still_active:
+            result = self._disp.switch(coro, value)
+            if result != (None, None):
                 stream = self._connections.pop(coro)
-                stream.close()
+                if stream.active:
+                    stream.close()
 
 
     def __init__(self, stream_handler, block_size=1024, buffer_size=65536):

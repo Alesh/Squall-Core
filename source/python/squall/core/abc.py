@@ -7,6 +7,7 @@ try:
     from typing import Coroutine, Awaitable, Callable
 except ImportError:
     from collections.abc import Coroutine, Awaitable, Callable
+from typing import Union, Tuple, Optional, Any
 
 
 def _check_methods(C, *methods):
@@ -32,45 +33,53 @@ class Switcher(metaclass=ABCMeta):
         """ Running coroutine """
 
     @abstractmethod
-    def switch(self, coro: Coroutine, value) -> bool:
+    def switch(self, coro: Coroutine, value) -> Tuple[Optional[Any], Optional[Exception]]:
         """ Sends some value into coroutine to switches its running back.
-        Returns `True` if coroutine is continue running and `False` if has finished.
+        Returns (None, None) if coroutine is continue running; (Any, StopIteration) if has finished;
+        (None, Exception) if has aborted by uncaught exception or closed.
         """
 
 class Future(metaclass=ABCMeta):
     """ Abstract base class of the future object (like `concurrent.futures.Future`)
     """
 
+    @abstractmethod
     def cancel(self):
         """ Cancel the future if possible.
         See more: `concurrent.futures.Future.cancel`
         """
 
+    @abstractmethod
     def cancelled(self):
         """ Return True if the future was cancelled.
         See more: `concurrent.futures.Future.cancel`
         """
 
+    @abstractmethod
     def running(self):
         """ Return True if the future is currently executing.
         See more: `concurrent.futures.Future.running`
         """
 
+    @abstractmethod
     def done(self):
         """ Return True of the future was cancelled or finished executing.
         See more: `concurrent.futures.Future.done`
         """
 
+    @abstractmethod
     def add_done_callback(self, callback):
         """ Attaches a callable that will be called when the future finishes.
          See more: `concurrent.futures.Future.add_done_callback`
         """
 
+    @abstractmethod
     def result(self, timeout=None):
         """ Return the result of the call that the future represents.
          See more: `concurrent.futures.Future.result`
         """
 
+    @abstractmethod
     def exception(self, timeout=None):
         """ Return the exception raised by the call that the future represents.
          See more: `concurrent.futures.Future.exception`
@@ -104,6 +113,11 @@ class Dispatcher(Switcher):
         """
 
     @abstractmethod
+    def submit(self, corofunc, *args, **kwargs) -> Future:
+        """ Creates and return wrapped coroutine as future-like.
+        """
+
+    @abstractmethod
     def start(self):
         """ Starts the coroutine dispatching.
         """
@@ -132,9 +146,9 @@ class Dispatcher(Switcher):
         """
 
     @abstractmethod
-    def wait(self, future: Future, *, timeout: float = None) -> Awaitable:
+    def wait(self, *futures: Tuple[Future], timeout: float = None) -> Awaitable:
         """ Returns the awaitable that switches current coroutine back
-        when the given `future` has done.
+        when the given future or list of futures has done.
         It will raise `TimeoutError` if `timeout` is set and elapsed.
         """
 

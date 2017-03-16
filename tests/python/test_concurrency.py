@@ -6,9 +6,9 @@ import time
 
 import pytest
 from squall.core import Dispatcher as API
-from squall.core.abc import Future
+from squall.core.abc import Future as AbcFuture
 
-Future.register(concurrent.futures.Future)
+AbcFuture.register(concurrent.futures.Future)
 
 
 @pytest.yield_fixture
@@ -156,10 +156,10 @@ def executor():
 
 def func_sleep(seconds):
     time.sleep(seconds)
-    return 'DONE!'
+    return 'DONE!R'
 
 
-def test_futures(callog, executor):
+def test_real_future(callog, executor):
     async def corofuncFT(api, executor, seconds):
         callog.append('<FT')
         try:
@@ -177,7 +177,7 @@ def test_futures(callog, executor):
             callog.append('*')
             cnt += 1
             if cnt == 1:
-                api.spawn(corofuncFT, executor, 0.3)
+                api.spawn(corofuncFT, executor, 0.35)
         api.stop()
         callog.append('>>')
 
@@ -186,8 +186,77 @@ def test_futures(callog, executor):
     api.start()
 
     print(callog)
-    assert callog == ['<<', '*', '<FT', '*', '*', '*', 'DONE!', 'FT>', '*', '>>']
+    assert callog == ['<<', '*', '<FT', '*', '*', '*', 'DONE!R', 'FT>', '*', '>>']
+
+
+async def corofunc_sleep(api, seconds):
+    await api.sleep(seconds)
+    return 'DONE!A'
+
+
+def test_async_future(callog):
+
+    async def corofuncFT(api, seconds):
+        callog.append('<FT')
+        try:
+            future = api.submit(corofunc_sleep, seconds)
+            result = await api.wait(future)
+            callog.append(result)
+        finally:
+            callog.append('FT>')
+
+    async def corofunc(api):
+        cnt = 0
+        callog.append('<<')
+        while cnt < 5:
+            await api.sleep(0.1)
+            callog.append('*')
+            cnt += 1
+            if cnt == 1:
+                api.spawn(corofuncFT, 0.35)
+        api.stop()
+        callog.append('>>')
+
+    api = API()
+    api.spawn(corofunc)
+    api.start()
+
+    print(callog)
+    assert callog == ['<<', '*', '<FT', '*', '*', '*', 'DONE!A', 'FT>', '*', '>>']
+
+
+def test_both_future(callog, executor):
+
+    async def corofuncFT(api, seconds):
+        callog.append('<FT')
+        try:
+            future_a = api.submit(corofunc_sleep, seconds)
+            future_r = executor.submit(func_sleep, seconds)
+            result = await api.wait(future_a, future_r)
+            callog.append(result)
+        finally:
+            callog.append('FT>')
+
+    async def corofunc(api):
+        cnt = 0
+        callog.append('<<')
+        while cnt < 5:
+            await api.sleep(0.1)
+            callog.append('*')
+            cnt += 1
+            if cnt == 1:
+                api.spawn(corofuncFT, 0.33)
+        api.stop()
+        callog.append('>>')
+
+    api = API()
+    api.spawn(corofunc)
+    api.start()
+
+    print(callog)
+    assert callog == ['<<', '*', '<FT', '*', '*', '*',  ('DONE!A', 'DONE!R'), 'FT>', '*', '>>']
 
 
 if __name__ == '__main__':
     pytest.main([__file__])
+

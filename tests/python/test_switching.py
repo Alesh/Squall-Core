@@ -21,8 +21,8 @@ class MockSwitcher(Switcher):
         """ Implementation of `Switcher.switch` """
         result = super().switch(coro, value)
         value = type(value) if isinstance(value, BaseException) else value
-        self._callog.append(('switch', value, result))
-
+        result, exc = result
+        self._callog.append(('switch', value, exc is None))
 
 async def async1func(switcher, callog,
                      setup=None, cancel=None,

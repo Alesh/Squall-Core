@@ -3,9 +3,10 @@ from collections import deque
 from collections.abc import Coroutine, Callable
 from functools import partial
 
-from squall.core.abc import Future
 from squall.core.abc import Dispatcher as AbcDispatcher
+from squall.core.abc import Future as AbcFuture
 from squall.core.abc import Switcher as AbcSwitcher
+from squall.core.native.futures import BaseFuture, FutureGroup
 
 try:
     from squall.core.native.cb.tornado_ import EventLoop
@@ -29,18 +30,24 @@ class Switcher(AbcSwitcher):
         """ See more: `AbcSwitcher.switch` """
         try:
             self._current.appendleft(coro)
-            if isinstance(value, BaseException):
+            if isinstance(value, BaseException):  ### or issubclass(value, BaseException):
                 coro.throw(value)
             else:
                 coro.send(value)
-            return True
+            return (None, None)
         except BaseException as exc:
             if not isinstance(exc, (StopIteration, GeneratorExit)):
                 logging.exception("Uncaught exception when switch({}, {})"
                                   "".format(coro, value))
+            elif isinstance(exc, StopIteration):
+                if isinstance(coro, FuturedCoroutine):
+                    coro.set_result(exc.value)
+                return (exc.value, exc)
+            if isinstance(coro, FuturedCoroutine):
+                coro.set_exception(exc)
+            return (None, exc)
         finally:
             self._current.popleft()
-        return False
 
 
 class SwitchedCoroutine(Coroutine):
@@ -76,6 +83,36 @@ class SwitchedCoroutine(Coroutine):
         super().throw(typ, val, tb)
 
 
+class FuturedCoroutine(Coroutine, BaseFuture):
+    """ Future-like coroutine
+    """
+
+    def __init__(self, disp, corofunc, *args, **kwargs):
+        self._disp = disp
+        self._coro = corofunc(disp, *args, **kwargs)
+        assert isinstance(self._coro, Coroutine)
+        BaseFuture.__init__(self)
+
+    def __await__(self):
+        return self._coro
+
+    def send(self, value):
+        """ See more: `Coroutine.send` """
+        self._coro.send(value)
+
+    def throw(self, typ, val=None, tb=None):
+        """ See more: `Coroutine.throw` """
+        if typ == GeneratorExit or isinstance(val, GeneratorExit):
+            self._cancelled = True
+        self._coro.send(typ, val, tb)
+
+    def cancel(self):
+        """ See more: `AbcFuture.exception` """
+        if self.running():
+            self._disp.switch(self._coro, GeneratorExit())
+        return super().cancel()
+
+
 class Dispatcher(AbcDispatcher, Switcher):
     """ Coroutine event dispatcher / switcher
     """
@@ -97,6 +134,13 @@ class Dispatcher(AbcDispatcher, Switcher):
     def spawn(self, corofunc, *args, **kwargs):
         """ See more: `AbcDispatcher.spawn` """
         coro = corofunc(self, *args, **kwargs)
+        assert isinstance(coro, Coroutine)
+        self.switch(coro, None)
+        return coro
+
+    def submit(self, corofunc, *args, **kwargs) -> AbcFuture:
+        """ See more: `submit` """
+        coro = FuturedCoroutine(self, corofunc, *args, **kwargs)
         assert isinstance(coro, Coroutine)
         self.switch(coro, None)
         return coro
@@ -145,10 +189,11 @@ class Dispatcher(AbcDispatcher, Switcher):
                 args.append(None)
 
         def cancel():
-            ready, timeout = args
-            self._loop.cancel_ready(ready)
-            if timeout is not None:
-                self._loop.cancel_timeout(timeout)
+            if args:
+                ready, timeout = args
+                self._loop.cancel_ready(ready)
+                if timeout is not None:
+                    self._loop.cancel_timeout(timeout)
 
         return SwitchedCoroutine(self, setup, cancel)
 
@@ -166,13 +211,19 @@ class Dispatcher(AbcDispatcher, Switcher):
 
         return SwitchedCoroutine(self, setup, cancel)
 
-    def wait(self, future: Future, *, timeout=None):
+    def wait(self, *futures, timeout=None):
         """ See more: `AbcDispatcher.wait` """
         args = []
         timeout = timeout or 0
         timeout = timeout if timeout >= 0 else -1
         assert isinstance(timeout, (int, float))
-        assert isinstance(future, Future)
+        assert len(futures) > 0
+
+        if len(futures) == 1:
+            future = futures[0]
+        else:
+            future = FutureGroup(futures)
+        assert isinstance(future, AbcFuture)
 
         def setup(callback):
             timeout_exc = TimeoutError("I/O timeout")
@@ -200,10 +251,11 @@ class Dispatcher(AbcDispatcher, Switcher):
                 args.append(None)
 
         def cancel():
-            future, timeout = args
-            if future.running():
-                future.cancel()
-            if timeout is not None:
-                self._loop.cancel_timeout(timeout)
+            if args:
+                future, timeout = args
+                if future.running():
+                    future.cancel()
+                if timeout is not None:
+                    self._loop.cancel_timeout(timeout)
 
         return SwitchedCoroutine(self, setup, cancel)

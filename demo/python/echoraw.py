@@ -8,7 +8,7 @@ import sys
 from signal import SIGINT
 
 from squall.core import Dispatcher as API
-from squall.core.utils import timeout_gen, Addr, logger
+from squall.core.utils import timeout_gen, Addr
 
 
 async def echo_handler(api, connection_socket, addr):
@@ -23,6 +23,7 @@ async def echo_handler(api, connection_socket, addr):
                 connection_socket.send(data)
             else:
                 raise ConnectionResetError("Connection reset by peer")
+            break
     except IOError as exc:
         logging.warning("[{}]Connection fail: {}".format(addr, exc))
 
@@ -106,7 +107,7 @@ def bind_sockets(port, host=None, backlog=128):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
 
     api = API()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077
