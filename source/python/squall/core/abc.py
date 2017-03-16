@@ -7,7 +7,7 @@ try:
     from typing import Coroutine, Awaitable, Callable
 except ImportError:
     from collections.abc import Coroutine, Awaitable, Callable
-from typing import Union, Tuple, Optional, Any
+from typing import Tuple, Optional, Any
 
 
 def _check_methods(C, *methods):
@@ -22,22 +22,6 @@ def _check_methods(C, *methods):
             return NotImplemented
     return True
 
-
-class Switcher(metaclass=ABCMeta):
-    """ Abstract base class of the coroutine switcher
-    """
-
-    @property
-    @abstractmethod
-    def current(self) -> Coroutine:
-        """ Running coroutine """
-
-    @abstractmethod
-    def switch(self, coro: Coroutine, value) -> Tuple[Optional[Any], Optional[Exception]]:
-        """ Sends some value into coroutine to switches its running back.
-        Returns (None, None) if coroutine is continue running; (Any, StopIteration) if has finished;
-        (None, Exception) if has aborted by uncaught exception or closed.
-        """
 
 class Future(metaclass=ABCMeta):
     """ Abstract base class of the future object (like `concurrent.futures.Future`)
@@ -93,7 +77,7 @@ class Future(metaclass=ABCMeta):
         return NotImplemented
 
 
-class Dispatcher(Switcher):
+class Dispatcher(metaclass=ABCMeta):
     """ Abstract base class of the coroutine dispatcher/switcher
     """
 
@@ -107,6 +91,11 @@ class Dispatcher(Switcher):
     def WRITE(self) -> int:
         """ Event code "I/O device ready to write". """
 
+    @property
+    @abstractmethod
+    def current(self) -> Coroutine:
+        """ Running coroutine """
+
     @abstractmethod
     def spawn(self, corofunc, *args, **kwargs) -> Coroutine:
         """ Creates and starts coroutine.
@@ -115,6 +104,13 @@ class Dispatcher(Switcher):
     @abstractmethod
     def submit(self, corofunc, *args, **kwargs) -> Future:
         """ Creates and return wrapped coroutine as future-like.
+        """
+
+    @abstractmethod
+    def switch(self, coro: Coroutine, value) -> Tuple[Optional[Any], Optional[Exception]]:
+        """ Sends some value into coroutine to switches its running back.
+        Returns (None, None) if coroutine is continue running; (Any, StopIteration) if has finished;
+        (None, Exception) if has aborted by uncaught exception or closed.
         """
 
     @abstractmethod
@@ -211,6 +207,7 @@ class IOStream(metaclass=ABCMeta):
         """ Closes stream and associated resources.
         """
 
+
 if sys.version_info[:2] > (3, 5):
     StreamHandler = Callable[[Dispatcher, IOStream, str], Coroutine]
 else:
@@ -254,4 +251,21 @@ class TCPServer(metaclass=ABCMeta):
     @abstractmethod
     def stop(self):
         """ Stops this server.
+        """
+
+
+class TCPClient(metaclass=ABCMeta):
+    """ Abstract base class of the async TCP client
+    """
+
+    @abstractmethod
+    def __init__(self, disp: Dispatcher, block_size: int = 1024, buffer_size: int = 64 * 1024):
+        """ Constructor """
+
+    @abstractmethod
+    def connect(self, stream_handler: StreamHandler,
+                host: str, port: int, *, timeout: float = None) -> Awaitable:
+        """ Asynchronously connects to the given host:port.
+        Raised TimeoutError if `timeout` is defined and elapsed.
+        Raised IOError if occurred I/O error.
         """

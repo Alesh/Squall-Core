@@ -1,12 +1,14 @@
 """ Network classes
 """
-from socket import SocketType
+import socket
+from functools import partial
+from socket import SocketType, SHUT_RDWR
 
 from squall.core.abc import StreamHandler
-from squall.core.abc import Switcher as AbcSwitcher
+from squall.core.abc import TCPClient as AbcTCPClient
 from squall.core.abc import TCPServer as AbcTCPServer
 from squall.core.native.iostream import IOStream
-from squall.core.native.switching import Dispatcher
+from squall.core.native.switching import Dispatcher, SwitchedCoroutine
 
 try:
     from squall.core.native.cb.tornado_ import SocketAutoBuffer
@@ -20,18 +22,17 @@ class _SocketStream(IOStream):
     """ Server socket stream
     """
 
-    def __init__(self, disp: Dispatcher, switcher,
-                 socket_, block_size, buffer_size):
+    def __init__(self, disp: Dispatcher, socket_, block_size, buffer_size):
         socket_.setblocking(0)
-        super().__init__(switcher, SocketAutoBuffer(disp._loop, socket_,
-                                                    block_size, buffer_size))
+        super().__init__(disp, SocketAutoBuffer(disp._loop, socket_,
+                                                block_size, buffer_size))
 
 
 class TCPServer(AbcTCPServer):
     """ Native implementation of the async TCP server
     """
 
-    class ConnectionsManager(AbcSwitcher):
+    class ConnectionsManager(object):
         """ Connections manager / coroutine switcher
         """
 
@@ -47,31 +48,27 @@ class TCPServer(AbcTCPServer):
         def accept(self, socket_: SocketType, address: str):
             """ Accepts incoming connection.
             """
-            stream = _SocketStream(self._disp, self, socket_,
+            stream = _SocketStream(self._disp, socket_,
                                    self._block_size, self._buffer_size)
-            coro = self._stream_handler(self._disp, stream, address)
-            self._connections[coro] = stream
-            self.switch(coro, None)
+            future = self._disp.submit(self._stream_handler, stream, address)
+            if future.running():
+                future.add_done_callback(self.close)
+                self._connections[future] = stream
+            else:
+                stream.close()
+
+        def close(self, conn):
+            stream = self._connections.pop(conn, None)
+            if conn.running():
+                self._disp.switch(conn, GeneratorExit)
+            if stream is not None and stream.active:
+                stream.close()
 
         def close_all(self):
             """ Closes all client connection
             """
-            for coro in tuple(self._connections.keys()):
-                self.switch(coro, GeneratorExit())
-
-        @property
-        def current(self):
-            """ See more: `AbcSwitcher.current` """
-            return self._disp.current
-
-        def switch(self, coro, value):
-            """ See more: `AbcSwitcher.switch` """
-            result = self._disp.switch(coro, value)
-            if result != (None, None):
-                stream = self._connections.pop(coro)
-                if stream.active:
-                    stream.close()
-
+            for conn in tuple(self._connections.keys()):
+                self.close(conn)
 
     def __init__(self, stream_handler, block_size=1024, buffer_size=65536):
         self._disp = None  # type: Dispatcher
@@ -89,7 +86,7 @@ class TCPServer(AbcTCPServer):
         """ See more: `AbcTCPServer.bind` """
         for socket_ in bind_sockets(port, address, backlog=backlog, reuse_port=reuse_port):
             if self.active:
-                acceptor = SocketAcceptor(self._disp._loop, socket_, self._connections.accept)
+                acceptor = SocketAcceptor(self._disp._loop, socket_, self._cm.accept)
                 if (port, address) not in self._acceptors:
                     self._acceptors[(port, address)] = list()
                 self._acceptors[(port, address)].append(acceptor)
@@ -133,3 +130,96 @@ class TCPServer(AbcTCPServer):
                 self.unbind(port, address)
             self._cm.close_all()
             self._disp.stop()
+
+
+class TCPClient(AbcTCPClient):
+    """ Native implementation of the async TCP client
+    """
+
+    def __init__(self, disp: Dispatcher, block_size=1024, buffer_size=65536):
+        self._disp = disp
+        self._stream_params = (block_size, buffer_size)
+
+    def connect(self, stream_handler, host, port, *, timeout=None):
+        return self._ConnectAwaitable(self._disp, stream_handler,
+                                      host, port, timeout, *self._stream_params)
+
+    class _ConnectAwaitable(SwitchedCoroutine):
+
+        def __init__(self, disp, stream_handler, host, port, timeout, block_size, buffer_size):
+            self._disp = disp
+            self._loop = disp._loop
+            self._block_size = block_size
+            self._buffer_size = buffer_size
+            self._stream_handler = stream_handler
+            timeout = timeout or 0
+            timeout = timeout if timeout >= 0 else -1
+            assert isinstance(timeout, (int, float))
+            assert isinstance(host, str)
+            assert isinstance(port, int)
+            self._handles = []
+            self._address = (host, port)
+            super().__init__(disp, host, port, timeout)
+
+        def on_connect(self, callback, socket_, revents):
+
+            def done_callback(future):
+                try:
+                    result = future.result()
+                    callback(result if result is not None else True)
+                except BaseException as exc:
+                    callback(exc)
+
+            self.cancel()
+
+            if isinstance(revents, Exception):
+                try:
+                    socket_.shutdown(SHUT_RDWR)
+                except:
+                    pass
+                finally:
+                    socket_.close()
+                callback(ConnectionError("Cannon connect"))
+            else:
+                stream = _SocketStream(self._disp, socket_, self._block_size, self._buffer_size)
+                future = self._disp.submit(self._stream_handler, stream, self._address)
+
+                if future.done():
+                    done_callback(future)
+                else:
+                    future.add_done_callback(done_callback)
+                    self._handles.append(future)
+
+        def setup(self, callback, host, port, timeout):
+            timeout_exc = TimeoutError("I/O timeout")
+            if timeout < 0:
+                return timeout_exc
+            try:
+                socket_ = socket.socket()
+                socket_.setblocking(0)
+                socket_.settimeout(0)
+                self._handles.append(self._loop.setup_ready(partial(self.on_connect, callback, socket_),
+                                               socket_.fileno(), self._loop.WRITE))
+                if timeout > 0:
+                    self._handles.append(self._loop.setup_timeout(partial(self.on_connect, callback, socket_),
+                                                     timeout, timeout_exc))
+                else:
+                    self._handles.append(None)
+                try:
+                    socket_.connect(self._address)
+                except BlockingIOError:
+                    pass
+            except BaseException as exc:
+                return exc
+
+        def cancel(self):
+            if len(self._handles) == 2:
+                ready, timeout = self._handles
+                self._loop.cancel_ready(ready)
+                if timeout is not None:
+                    self._loop.cancel_timeout(timeout)
+            elif len(self._handles) == 1:
+                future = self._handles[0]
+                if future.running():
+                    future.cancel()
+            self._handles.clear()

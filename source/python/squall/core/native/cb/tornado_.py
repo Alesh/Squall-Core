@@ -46,7 +46,7 @@ class EventLoop(AbcEventLoop):
         """ See more: `AbcEventLoop.setup_ready` """
 
         def handler(_, revents):
-            if events & IOLoop.ERROR:
+            if revents & IOLoop.ERROR:
                 callback(IOError("Internal eventloop error"))
             else:
                 callback(revents)
@@ -99,7 +99,7 @@ class SocketAutoBuffer(AbcAutoBuffer):
     def _event_handler(self, revents):
         last_error = None
         mode = self._mode
-        if isinstance(revents, Exception):
+        if isinstance(revents, BaseException):
             last_error = revents
         else:
             try:
@@ -113,7 +113,7 @@ class SocketAutoBuffer(AbcAutoBuffer):
                             mode ^= self.READ
                     else:
                         mode ^= self.READ
-                        raise ConnectionResetError("Connection reset by peer")
+                        last_error = ConnectionResetError("Connection reset by peer")
                 if revents & self.WRITE:
                     block = self._out[:self._block_size]
                     if len(block) > 0:
@@ -128,13 +128,13 @@ class SocketAutoBuffer(AbcAutoBuffer):
             # apply buffer task
             result = None
             callback, event, method, timeout = self._task
-            if last_error is not None:
-                result = last_error
-            elif event & revents:
+            if event & revents:
                 if event == self.READ:
                     result = method(self._in)
                 elif event == self.WRITE:
                     result = method(len(self._out))
+            if result is None and last_error is not None:
+                result = last_error
             if result is not None:
                 self.cancel_task()
                 callback(result)

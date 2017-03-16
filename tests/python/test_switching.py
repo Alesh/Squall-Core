@@ -1,7 +1,8 @@
 import logging
 
 import pytest
-from squall.core.native.switching import Switcher, SwitchedCoroutine
+from squall.core.native.switching import Dispatcher
+from squall.core.native.switching import SwitchedCoroutine as BaseSwitchedCoroutine
 
 
 @pytest.yield_fixture
@@ -10,7 +11,7 @@ def callog():
     yield _callog
 
 
-class MockSwitcher(Switcher):
+class MockSwitcher(Dispatcher):
     """ Mock coroutine switcher """
 
     def __init__(self, callog):
@@ -23,6 +24,20 @@ class MockSwitcher(Switcher):
         value = type(value) if isinstance(value, BaseException) else value
         result, exc = result
         self._callog.append(('switch', value, exc is None))
+
+
+class SwitchedCoroutine(BaseSwitchedCoroutine):
+    def __init__(self, disp, setup, cancel):
+        self._setup = setup
+        self._cancel = cancel
+        super().__init__(disp)
+
+    def setup(self, callback):
+        return self._setup(callback)
+
+    def cancel(self):
+        self._cancel()
+
 
 async def async1func(switcher, callog,
                      setup=None, cancel=None,

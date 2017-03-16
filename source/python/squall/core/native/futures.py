@@ -2,7 +2,7 @@ import logging
 from abc import abstractmethod
 from concurrent.futures import CancelledError
 
-from squall.core.abc import Future as AbcFuture
+from squall.core.abc import Coroutine, Future as AbcFuture
 
 
 class BaseFuture(AbcFuture):
@@ -138,4 +138,34 @@ class FutureGroup(BaseFuture):
         if self.running():
             for future in self._futures.keys():
                 future.cancel()
+        return super().cancel()
+
+
+class FuturedCoroutine(Coroutine, BaseFuture):
+    """ Future-like coroutine
+    """
+
+    def __init__(self, disp, corofunc, *args, **kwargs):
+        self._disp = disp
+        self._coro = corofunc(disp, *args, **kwargs)
+        assert isinstance(self._coro, Coroutine)
+        BaseFuture.__init__(self)
+
+    def __await__(self):
+        return self._coro
+
+    def send(self, value):
+        """ See more: `Coroutine.send` """
+        self._coro.send(value)
+
+    def throw(self, typ, val=None, tb=None):
+        """ See more: `Coroutine.throw` """
+        if typ == GeneratorExit or isinstance(val, GeneratorExit):
+            self._cancelled = True
+        self._coro.throw(typ, val, tb)
+
+    def cancel(self):
+        """ See more: `AbcFuture.exception` """
+        if self.running():
+            self._disp.switch(self._coro, GeneratorExit)
         return super().cancel()
