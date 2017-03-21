@@ -8,9 +8,9 @@ from squall.core.abc import Future as AbcFuture
 from squall.core.native.futures import FuturedCoroutine, FutureGroup
 
 try:
-    from squall.core.native.cb.tornado_ import EventLoop
+    from squall.core.native.tornado_ import EventLoop
 except ImportError:
-    from squall.core.native.cb.asyncio_ import EventLoop
+    from squall.core.native.asyncio_ import EventLoop
 
 
 class SwitchedCoroutine(Coroutine):

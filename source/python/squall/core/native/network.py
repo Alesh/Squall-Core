@@ -1,5 +1,8 @@
 """ Network classes
 """
+import errno
+import logging
+import os
 import socket
 from functools import partial
 from socket import SocketType, SHUT_RDWR
@@ -7,15 +10,91 @@ from socket import SocketType, SHUT_RDWR
 from squall.core.abc import StreamHandler
 from squall.core.abc import TCPClient as AbcTCPClient
 from squall.core.abc import TCPServer as AbcTCPServer
-from squall.core.native.iostream import IOStream
+from squall.core.native.abc import EventLoop, Callable
+from squall.core.native.iostream import IOStream, AutoBuffer
 from squall.core.native.switching import Dispatcher, SwitchedCoroutine
 
-try:
-    from squall.core.native.cb.tornado_ import SocketAutoBuffer
-    from squall.core.native.cb.tornado_ import SocketAcceptor, bind_sockets
-except ImportError:
-    from squall.core.native.cb.asyncio_ import SocketAutoBuffer
-    from squall.core.native.cb.asyncio_ import SocketAcceptor, bind_sockets
+
+def bind_sockets(port, address, *, backlog=127, reuse_port=False):
+    """ Binds sockets """
+    sockets = list()
+    info = socket.getaddrinfo(address, port, socket.AF_INET,
+                              socket.SOCK_STREAM, 0, socket.AI_PASSIVE)
+    for af, socktype, proto, canonname, sockaddr in set(info):
+        try:
+            socket_ = socket.socket(af, socktype, proto)
+        except socket.error as e:
+            if getattr(0, 'errno', e.args[0] if e.args else 0) == errno.EAFNOSUPPORT:
+                continue
+            raise
+        if reuse_port:
+            if not hasattr(socket, "SO_REUSEPORT"):
+                raise ValueError("the platform doesn't support SO_REUSEPORT")
+            socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        if os.name != 'nt':
+            socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        socket_.setblocking(0)
+        socket_.bind(sockaddr)
+        socket_.listen(backlog)
+        sockets.append(socket_)
+    return sockets
+
+
+class _SocketAutoBuffer(AutoBuffer):
+    """ Server socket auto buffer
+    """
+
+    def __init__(self, event_loop: EventLoop, socket_: SocketType, block_size, buffer_size):
+        self._socket = socket_
+        super().__init__(event_loop, socket_.fileno(), block_size, buffer_size)
+
+    def _read_block(self, size):
+        """ See more: `AutoBuffer._read_block` """
+        return self._socket.recv(size)
+
+    def _write_block(self, block):
+        """ See more: `AutoBuffer._write_block` """
+        return self._socket.send(block)
+
+    def close(self):
+        """ See more: `AutoBuffer.close` """
+        try:
+            super().close()
+            self._socket.shutdown(SHUT_RDWR)
+        except:
+            pass
+        finally:
+            self._socket.close()
+            self._socket = None
+
+
+class _SocketAcceptor(object):
+    """ Socket acceptor
+    """
+
+    def __init__(self, event_loop: EventLoop, socket_: SocketType,
+                 on_accept: Callable[[SocketType, str], None]):
+
+        def acceptor(revents):
+            if revents & event_loop.READ:
+                for _ in range(128):
+                    try:
+                        connection, address = socket_.accept()
+                        on_accept(connection, address)
+                    except socket.error as e:
+                        errno_ = getattr(0, 'errno', e.args[0] if e.args else 0)
+                        if errno_ in (errno.EWOULDBLOCK, errno.EAGAIN):
+                            return
+                        if errno_ == errno.ECONNABORTED:
+                            continue
+                        logging.error("Exception while listening: {}".format(e))
+
+        self._loop = event_loop
+        self._handle = self._loop.setup_ready(acceptor, socket_.fileno(), self._loop.READ)
+
+    def close(self):
+        """ See more `AbcSocketAcceptor.close` """
+        self._loop.cancel_ready(self._handle)
 
 
 class _SocketStream(IOStream):
@@ -24,8 +103,8 @@ class _SocketStream(IOStream):
 
     def __init__(self, disp: Dispatcher, socket_, block_size, buffer_size):
         socket_.setblocking(0)
-        super().__init__(disp, SocketAutoBuffer(disp._loop, socket_,
-                                                block_size, buffer_size))
+        super().__init__(disp, _SocketAutoBuffer(disp._loop, socket_,
+                                                 block_size, buffer_size))
 
 
 class TCPServer(AbcTCPServer):
@@ -86,7 +165,7 @@ class TCPServer(AbcTCPServer):
         """ See more: `AbcTCPServer.bind` """
         for socket_ in bind_sockets(port, address, backlog=backlog, reuse_port=reuse_port):
             if self.active:
-                acceptor = SocketAcceptor(self._disp._loop, socket_, self._cm.accept)
+                acceptor = _SocketAcceptor(self._disp._loop, socket_, self._cm.accept)
                 if (port, address) not in self._acceptors:
                     self._acceptors[(port, address)] = list()
                 self._acceptors[(port, address)].append(acceptor)
@@ -114,7 +193,7 @@ class TCPServer(AbcTCPServer):
         assert num_processes == 1  # ToDo: multiprocessed TCP server
         for (port, address), sockets in self._sockets.items():
             for socket_ in sockets:
-                acceptor = SocketAcceptor(self._disp._loop, socket_, self._cm.accept)
+                acceptor = _SocketAcceptor(self._disp._loop, socket_, self._cm.accept)
                 if (port, address) not in self._acceptors:
                     self._acceptors[(port, address)] = list()
                 self._acceptors[(port, address)].append(acceptor)
@@ -199,10 +278,10 @@ class TCPClient(AbcTCPClient):
                 socket_.setblocking(0)
                 socket_.settimeout(0)
                 self._handles.append(self._loop.setup_ready(partial(self.on_connect, callback, socket_),
-                                               socket_.fileno(), self._loop.WRITE))
+                                                            socket_.fileno(), self._loop.WRITE))
                 if timeout > 0:
                     self._handles.append(self._loop.setup_timeout(partial(self.on_connect, callback, socket_),
-                                                     timeout, timeout_exc))
+                                                                  timeout, timeout_exc))
                 else:
                     self._handles.append(None)
                 try:

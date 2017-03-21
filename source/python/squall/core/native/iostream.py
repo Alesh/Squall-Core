@@ -1,15 +1,170 @@
 from functools import partial
 
-from squall.core.abc import IOStream as AbcIOStream
-from squall.core.native.cb.abc import AutoBuffer as AbcAutoBuffer
+from squall.core.abc import abstractmethod, IOStream as AbcIOStream
+from squall.core.native.abc import AutoBuffer as AbcAutoBuffer
+from squall.core.native.abc import EventLoop
 from squall.core.native.switching import Dispatcher, SwitchedCoroutine
+
+
+class AutoBuffer(AbcAutoBuffer):
+    """ Base I/O auto buffer
+    """
+
+    def __init__(self, event_loop: EventLoop, fd: int, block_size, buffer_size):
+        self._in = b''
+        self._out = b''
+        self._task = None
+        self._loop = event_loop
+        self._mode = self.READ
+        self._block_size = block_size
+        self._buffer_size = buffer_size
+        self._handle = self._loop.setup_ready(self._event_handler, fd, self._mode)
+
+    @abstractmethod
+    def _read_block(self, size: int) -> bytes:
+        """ Reads and return from I/O device a bytes block with given `size`.
+        """
+
+    @abstractmethod
+    def _write_block(self, block: bytes) -> int:
+        """ Writes a `bytes` block to I/O device and return number of sent bytes.
+        """
+
+    def _event_handler(self, revents):
+        last_error = None
+        mode = self._mode
+        if isinstance(revents, BaseException):
+            last_error = revents
+        else:
+            try:
+                if revents & self.READ:
+                    max_size = self._buffer_size - len(self._in)
+                    block_size = self._block_size if self._block_size < max_size else max_size
+                    block = self._read_block(block_size)
+                    if len(block) > 0:
+                        self._in += block
+                        if len(self._in) >= self._buffer_size:
+                            mode ^= self.READ
+                    else:
+                        mode ^= self.READ
+                        last_error = ConnectionResetError("Connection reset by peer")
+                if revents & self.WRITE:
+                    block = self._out[:self._block_size]
+                    if len(block) > 0:
+                        sent_size = self._write_block(block)
+                        self._out = self._out[sent_size:]
+                    if len(self._out) == 0:
+                        mode ^= self.WRITE
+            except IOError as exc:
+                last_error = exc
+
+        if self._task is not None:
+            # apply buffer task
+            result = None
+            callback, event, method, timeout = self._task
+            if event & revents:
+                if event == self.READ:
+                    result = method(self._in)
+                elif event == self.WRITE:
+                    result = method(len(self._out))
+            if result is None and last_error is not None:
+                result = last_error
+            if result is not None:
+                self.cancel_task()
+                callback(result)
+
+        if self.active:
+            # recalc I/O mode
+            if not (mode & self.READ):
+                if len(self._in) < self._buffer_size:
+                    mode |= self.READ
+            if not (mode & self.WRITE):
+                if len(self._out) > 0:
+                    mode |= self.WRITE
+            if mode != self._mode:
+                self._mode = mode
+                self._loop.update_ready(self._handle, self._mode)
+
+    @property
+    def active(self):
+        """ See more: `AbcAutoBuffer.active` """
+        return self._handle is not None
+
+    @property
+    def READ(self):
+        """ See more: `AbcAutoBuffer.READ` """
+        return self._loop.READ
+
+    @property
+    def WRITE(self):
+        """ See more: `AbcAutoBuffer.WRITE` """
+        return self._loop.WRITE
+
+    @property
+    def block_size(self):
+        """ See more: `AbcAutoBuffer.block_size` """
+        return self._block_size
+
+    @property
+    def buffer_size(self):
+        """ See more: `AbcAutoBuffer.buffer_size` """
+        return self._buffer_size
+
+    def setup_task(self, callback, trigger_event, task_method, timeout):
+        """ See more: `AbcAutoBuffer.setup_task` """
+        result = None
+        exec_timeout = TimeoutError("I/O timeout")
+        if timeout < 0:
+            result = exec_timeout
+        elif trigger_event == self.READ:
+            result = task_method(self._in)
+        elif trigger_event == self.WRITE:
+            result = task_method(len(self._out))
+        if result is None:
+            if timeout > 0:
+                timeout = self._loop.setup_timeout(self._event_handler, timeout, exec_timeout)
+            else:
+                timeout = None
+            self._task = (callback, trigger_event, task_method, timeout)
+        return result
+
+    def cancel_task(self):
+        """ See more: `AbcAutoBuffer.cancel_task` """
+        if self._task is not None:
+            callback, trigger_event, task_method, timeout = self._task
+            if timeout is not None:
+                self._loop.cancel_timeout(timeout)
+            self._task = None
+
+    def read(self, max_bytes):
+        """ See more: `AbcAutoBuffer.read` """
+        result, self._in = self._in[:max_bytes], self._in[max_bytes:]
+        return result
+
+    def write(self, data):
+        """ See more: `AbcAutoBuffer.write` """
+        block = b''
+        if self.active:
+            block = data[:self._buffer_size - len(self._out)]
+            self._out += block
+            if not (self._mode & self.WRITE):
+                self._mode |= self.WRITE
+                self._loop.update_ready(self._handle, self._mode)
+        return len(block)
+
+    @abstractmethod
+    def close(self):
+        """ See more: `AbcAutoBuffer.close` """
+        self.cancel_task()
+        self._loop.cancel_ready(self._handle)
+        self._handle = None
 
 
 class IOStream(AbcIOStream):
     """ Base async I/O stream
     """
 
-    def __init__(self, disp: Dispatcher, auto_buff: AbcAutoBuffer):
+    def __init__(self, disp: Dispatcher, auto_buff: AutoBuffer):
         self._disp = disp
         self._auto_buff = auto_buff
 

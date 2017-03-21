@@ -1,8 +1,7 @@
 """ Abstract base classes (Interfaces)
 """
-from abc import ABCMeta, abstractmethod
-from socket import SocketType
-from typing import Any, Callable
+
+from squall.core.abc import ABCMeta, abstractmethod, Callable, Any
 
 
 class EventLoop(metaclass=ABCMeta):
@@ -45,7 +44,12 @@ class EventLoop(metaclass=ABCMeta):
     def setup_ready(self, callback: Callable[[Any], None], fd: int, events: int):
         """ Setup to run the `callback` when I/O device with
         given `fd` would be ready to read or/and write.
-        Returns handle for using with `EventLoop.cancel_ready`
+        Returns handle for using with `EventLoop.update_ready` and `EventLoop.cancel_ready`
+        """
+
+    @abstractmethod
+    def update_ready(self, handle: Any, events: int):
+        """ Updates call settings for callback which was setup with `EventLoop.setup_ready`.
         """
 
     @abstractmethod
@@ -118,21 +122,6 @@ class AutoBuffer(metaclass=ABCMeta):
         """ Writes data to the outcoming buffer.
         Returns number of bytes what has been written.
         """
-
-    @abstractmethod
-    def close(self):
-        """ Closes this and associated resources.
-        """
-
-
-class SocketAcceptor(metaclass=ABCMeta):
-    """ Abstract base class of the auto I/O buffer
-    """
-
-    @abstractmethod
-    def __init__(self, event_loop: EventLoop, socket_: SocketType,
-                 on_accept: Callable[[SocketType, str], None]):
-        """ Constructor """
 
     @abstractmethod
     def close(self):
