@@ -35,6 +35,7 @@ class AutoBuffer(AbcAutoBuffer):
         mode = self._mode
         if isinstance(revents, BaseException):
             last_error = revents
+            revents = 0
         else:
             try:
                 if revents & self.READ:
@@ -87,31 +88,31 @@ class AutoBuffer(AbcAutoBuffer):
 
     @property
     def active(self):
-        """ See more: `AbcAutoBuffer.active` """
+        """ See for detail `AbcAutoBuffer.active` """
         return self._handle is not None
 
     @property
     def READ(self):
-        """ See more: `AbcAutoBuffer.READ` """
+        """ See for detail `AbcAutoBuffer.READ` """
         return self._loop.READ
 
     @property
     def WRITE(self):
-        """ See more: `AbcAutoBuffer.WRITE` """
+        """ See for detail `AbcAutoBuffer.WRITE` """
         return self._loop.WRITE
 
     @property
     def block_size(self):
-        """ See more: `AbcAutoBuffer.block_size` """
+        """ See for detail `AbcAutoBuffer.block_size` """
         return self._block_size
 
     @property
     def buffer_size(self):
-        """ See more: `AbcAutoBuffer.buffer_size` """
+        """ See for detail `AbcAutoBuffer.buffer_size` """
         return self._buffer_size
 
     def setup_task(self, callback, trigger_event, task_method, timeout):
-        """ See more: `AbcAutoBuffer.setup_task` """
+        """ See for detail `AbcAutoBuffer.setup_task` """
         result = None
         exec_timeout = TimeoutError("I/O timeout")
         if timeout < 0:
@@ -129,7 +130,7 @@ class AutoBuffer(AbcAutoBuffer):
         return result
 
     def cancel_task(self):
-        """ See more: `AbcAutoBuffer.cancel_task` """
+        """ See for detail `AbcAutoBuffer.cancel_task` """
         if self._task is not None:
             callback, trigger_event, task_method, timeout = self._task
             if timeout is not None:
@@ -137,12 +138,12 @@ class AutoBuffer(AbcAutoBuffer):
             self._task = None
 
     def read(self, max_bytes):
-        """ See more: `AbcAutoBuffer.read` """
+        """ See for detail `AbcAutoBuffer.read` """
         result, self._in = self._in[:max_bytes], self._in[max_bytes:]
         return result
 
     def write(self, data):
-        """ See more: `AbcAutoBuffer.write` """
+        """ See for detail `AbcAutoBuffer.write` """
         block = b''
         if self.active:
             block = data[:self._buffer_size - len(self._out)]
@@ -154,7 +155,7 @@ class AutoBuffer(AbcAutoBuffer):
 
     @abstractmethod
     def close(self):
-        """ See more: `AbcAutoBuffer.close` """
+        """ See for detail `AbcAutoBuffer.close` """
         self.cancel_task()
         self._loop.cancel_ready(self._handle)
         self._handle = None
@@ -170,41 +171,41 @@ class IOStream(AbcIOStream):
 
     @property
     def active(self):
-        """ See more: `abc.IOStream.active` """
+        """ See for detail `AbcIOStream.active` """
         return self._auto_buff.active
 
     @property
     def block_size(self):
-        """ See more: `abc.IOStream.block_size` """
+        """ See for detail `AbcIOStream.block_size` """
         return self._auto_buff.block_size
 
     @property
     def buffer_size(self):
-        """ See more: `abc.IOStream.buffer_size` """
+        """ See for detail `AbcIOStream.buffer_size` """
         return self._auto_buff.buffer_size
 
     def read(self, max_bytes):
-        """ See more: `abc.IOStream.read` """
+        """ See for detail `AbcIOStream.read` """
         return self._auto_buff.read(max_bytes)
 
     def read_until(self, delimiter, *, max_bytes=None, timeout=None):
-        """ See more: `abc.IOStream.read_until` """
+        """ See for detail `AbcIOStream.read_until` """
         return _ReadUntilCoroutine(self._disp, self._auto_buff, delimiter, max_bytes, timeout)
 
     def read_exactly(self, num_bytes, *, timeout=None):
-        """ See more: `abc.IOStream.read_exactly` """
+        """ See for detail `AbcIOStream.read_exactly` """
         return _ReadExactly(self._disp, self._auto_buff, num_bytes, timeout)
 
     def write(self, data):
-        """ See more: `abc.IOStream.write` """
+        """ See for detail `AbcIOStream.write` """
         return self._auto_buff.write(data)
 
     def flush(self, *, timeout=None):
-        """ See more: `abc.IOStream.flush` """
+        """ See for detail `AbcIOStream.flush` """
         return _FlushCoroutine(self._disp, self._auto_buff, timeout)
 
     def close(self):
-        """ See more: `abc.IOStream.close` """
+        """ See for detail `AbcIOStream.close` """
         return self._auto_buff.close()
 
 

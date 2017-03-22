@@ -20,25 +20,25 @@ class EventLoop(AbcEventLoop):
         super().__init__()
 
     def start(self):
-        """ See more: `AbcEventLoop.start` """
+        """ See for detail `AbcEventLoop.start` """
         logging.info("Using asyncio based callback classes")
         self._loop.run_forever()
 
     def stop(self):
-        """ See more: `AbcEventLoop.stop` """
+        """ See for detail `AbcEventLoop.stop` """
         self._loop.stop()
 
     def setup_timeout(self, callback, seconds, result=True):
-        """ See more: `AbcEventLoop.setup_timeout` """
+        """ See for detail `AbcEventLoop.setup_timeout` """
         deadline = self._loop.time() + seconds
         return self._loop.call_at(deadline, callback, result)
 
     def cancel_timeout(self, handle):
-        """ See more: `AbcEventLoop.cancel_timeout` """
+        """ See for detail `AbcEventLoop.cancel_timeout` """
         handle.cancel()
 
     def setup_ready(self, callback, fd, events):
-        """ See more: `AbcEventLoop.setup_ready` """
+        """ See for detail `AbcEventLoop.setup_ready` """
         if events & self.READ:
             self._loop.add_reader(fd, callback, self.READ)
         if events & self.WRITE:
@@ -47,7 +47,7 @@ class EventLoop(AbcEventLoop):
         return fd
 
     def update_ready(self, handle, events):
-        """ See more: `AbcEventLoop.setup_ready` """
+        """ See for detail `AbcEventLoop.setup_ready` """
         fd = handle
         callback, _events = self._fds[fd]
         if _events != events:
@@ -62,7 +62,7 @@ class EventLoop(AbcEventLoop):
             self._fds[fd][1] = events
 
     def cancel_ready(self, handle):
-        """ See more: `AbcEventLoop.cancel_ready` """
+        """ See for detail `AbcEventLoop.cancel_ready` """
         fd = handle
         _, events = self._fds.pop(fd)
         if events & self.READ:
@@ -75,7 +75,7 @@ class EventLoop(AbcEventLoop):
             self._loop.call_soon(callback, signum)
 
     def setup_signal(self, callback, signum):
-        """ See more: `AbcEventLoop.setup_signal` """
+        """ See for detail `AbcEventLoop.setup_signal` """
         if signum not in self._signals:
             self._loop.add_signal_handler(signum, self._handle_signal, signum)
             self._signals[signum] = list()
@@ -83,7 +83,7 @@ class EventLoop(AbcEventLoop):
         return signum, callback
 
     def cancel_signal(self, handler):
-        """ See more: `AbcEventLoop.cancel_signal` """
+        """ See for detail `AbcEventLoop.cancel_signal` """
         signum, callback = handler
         if signum in self._signals:
             self._signals[signum].remove(callback)

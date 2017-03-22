@@ -31,15 +31,14 @@ class EchoServer(TCPServer):
         try:
             while stream.active:
                 timeout = timeout_gen(self._timeout)
-                data = await stream.read_until(b'\r\n\r\n', timeout=next(timeout))
+                data = await stream.read_until(b'\r\n', timeout=next(timeout))
                 if data:
-                    # await api.sleep(0.25)  # Lazy response ))
+                    await api.sleep(0.25)  # Lazy response ))
                     stream.write(data)
                 else:
                     raise ConnectionResetError("Connection reset by peer")
 
                 await stream.flush(timeout=next(timeout))
-                break
 
         except IOError as exc:
             logging.warning("[{}]Connection fail: {}".format(addr, exc))
@@ -51,11 +50,11 @@ class EchoServer(TCPServer):
             await api.signal(SIGINT)
             self.stop()
 
-        api.spawn(terminator)
+        api.submit(terminator)
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
 
     server = EchoServer()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077

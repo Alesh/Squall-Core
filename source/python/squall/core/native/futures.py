@@ -41,47 +41,47 @@ class BaseFuture(AbcFuture):
             id(self), self._state())
 
     def running(self):
-        """ See more: `AbcFuture.running` """
+        """ See for detail `AbcFuture.running` """
         return self._running and not self._cancelled
 
     def cancelled(self):
-        """ See more: `AbcFuture.cancelled` """
+        """ See for detail `AbcFuture.cancelled` """
         return self._cancelled
 
     def done(self):
-        """ See more: `AbcFuture.done` """
+        """ See for detail `AbcFuture.done` """
         return self._cancelled or (not self._running)
 
     @abstractmethod
     def cancel(self):
-        """ See more: `AbcFuture.exception` """
+        """ See for detail `AbcFuture.exception` """
         self._cancelled = True
         return self.cancelled()
 
     def exception(self, timeout=None):
-        """ See more: `AbcFuture.exception` """
+        """ See for detail `AbcFuture.exception` """
         if self.cancelled():
             raise CancelledError()
         if self.running():
             self.cancel()
-            raise NotImplementedError("Future canceled because method not fully implemented, "
-                                      "use `wait` method")
+            raise NotImplementedError("Use method `Dispatcher.complete` for take "
+                                      "a result of uncompleted future-like coroutine.")
         return self._exception
 
     def result(self, timeout=None):
-        """ See more: `AbcFuture.result` """
+        """ See for detail `AbcFuture.result` """
         if self.cancelled():
             raise CancelledError()
         if self.running():
             self.cancel()
-            raise NotImplementedError("Future canceled because method not fully implemented, "
-                                      "use `wait` method")
+            raise NotImplementedError("Use method `Dispatcher.complete` for take "
+                                      "a result of uncompleted future-like coroutine.")
         if self._exception is not None:
             raise self._exception
         return self._result
 
     def add_done_callback(self, callback):
-        """ See more: `AbcFuture.add_done_callback` """
+        """ See for detail `AbcFuture.add_done_callback` """
         self._done_callbacks.append(callback)
 
     def set_result(self, result):
@@ -134,7 +134,7 @@ class FutureGroup(BaseFuture):
             future.add_done_callback(callback)
 
     def cancel(self):
-        """ See more: `AbcFuture.exception` """
+        """ See for detail `AbcFuture.exception` """
         if self.running():
             for future in self._futures.keys():
                 future.cancel()
@@ -155,17 +155,17 @@ class FuturedCoroutine(Coroutine, BaseFuture):
         return self._coro
 
     def send(self, value):
-        """ See more: `Coroutine.send` """
+        """ See for detail `Coroutine.send` """
         self._coro.send(value)
 
     def throw(self, typ, val=None, tb=None):
-        """ See more: `Coroutine.throw` """
+        """ See for detail `Coroutine.throw` """
         if typ == GeneratorExit or isinstance(val, GeneratorExit):
             self._cancelled = True
         self._coro.throw(typ, val, tb)
 
     def cancel(self):
-        """ See more: `AbcFuture.exception` """
+        """ See for detail `AbcFuture.exception` """
         if self.running():
             self._disp.switch(self._coro, GeneratorExit)
         return super().cancel()

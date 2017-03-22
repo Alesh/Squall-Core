@@ -22,7 +22,7 @@ async def terminator(api):
 
 if __name__ == '__main__':
     api = API()
-    api.spawn(hello, "World", timeout=1.0)
-    api.spawn(hello, "Alesh", timeout=2.5)
-    api.spawn(terminator)
+    api.submit(hello, "World", timeout=1.0)
+    api.submit(hello, "Alesh", timeout=2.5)
+    api.submit(terminator)
     api.start()

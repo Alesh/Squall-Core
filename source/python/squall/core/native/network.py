@@ -4,6 +4,7 @@ import errno
 import logging
 import os
 import socket
+import sys
 from functools import partial
 from socket import SocketType, SHUT_RDWR
 
@@ -13,6 +14,12 @@ from squall.core.abc import TCPServer as AbcTCPServer
 from squall.core.native.abc import EventLoop, Callable
 from squall.core.native.iostream import IOStream, AutoBuffer
 from squall.core.native.switching import Dispatcher, SwitchedCoroutine
+
+
+if sys.version_info[:2] > (3, 5):
+    OnAccept = Callable[[SocketType, str], None]
+else:
+    OnAccept = Callable
 
 
 def bind_sockets(port, address, *, backlog=127, reuse_port=False):
@@ -49,15 +56,15 @@ class _SocketAutoBuffer(AutoBuffer):
         super().__init__(event_loop, socket_.fileno(), block_size, buffer_size)
 
     def _read_block(self, size):
-        """ See more: `AutoBuffer._read_block` """
+        """ See for detail `AutoBuffer._read_block` """
         return self._socket.recv(size)
 
     def _write_block(self, block):
-        """ See more: `AutoBuffer._write_block` """
+        """ See for detail `AutoBuffer._write_block` """
         return self._socket.send(block)
 
     def close(self):
-        """ See more: `AutoBuffer.close` """
+        """ See for detail `AutoBuffer.close` """
         try:
             super().close()
             self._socket.shutdown(SHUT_RDWR)
@@ -73,7 +80,7 @@ class _SocketAcceptor(object):
     """
 
     def __init__(self, event_loop: EventLoop, socket_: SocketType,
-                 on_accept: Callable[[SocketType, str], None]):
+                 on_accept: OnAccept):
 
         def acceptor(revents):
             if revents & event_loop.READ:
@@ -137,6 +144,8 @@ class TCPServer(AbcTCPServer):
                 stream.close()
 
         def close(self, conn):
+            """ Closes client connection
+            """
             stream = self._connections.pop(conn, None)
             if conn.running():
                 self._disp.switch(conn, GeneratorExit)
@@ -158,11 +167,11 @@ class TCPServer(AbcTCPServer):
 
     @property
     def active(self):
-        """ See more: `AbcTCPServer.active` """
+        """ See for detail `AbcTCPServer.active` """
         return self._disp is not None
 
     def bind(self, port, address=None, *, backlog=128, reuse_port=False):
-        """ See more: `AbcTCPServer.bind` """
+        """ See for detail `AbcTCPServer.bind` """
         for socket_ in bind_sockets(port, address, backlog=backlog, reuse_port=reuse_port):
             if self.active:
                 acceptor = _SocketAcceptor(self._disp._loop, socket_, self._cm.accept)
@@ -175,7 +184,7 @@ class TCPServer(AbcTCPServer):
                 self._sockets[(port, address)].append(socket_)
 
     def unbind(self, port, address=None):
-        """ See more: `AbcTCPServer.unbind` """
+        """ See for detail `AbcTCPServer.unbind` """
         if self.active:
             for acceptor in self._acceptors.pop((port, address), []):
                 acceptor.close()
@@ -183,10 +192,10 @@ class TCPServer(AbcTCPServer):
             self._sockets.pop((port, address))
 
     def before_start(self, disp):
-        """ See more: `AbcTCPServer.before_start` """
+        """ See for detail `AbcTCPServer.before_start` """
 
     def start(self, num_processes=1):
-        """ See more: `AbcTCPServer.start` """
+        """ See for detail `AbcTCPServer.start` """
         self._disp = Dispatcher()
         self._cm = self.ConnectionsManager(self._disp, *self._cm_args)
         self.before_start(self._disp)
@@ -202,7 +211,7 @@ class TCPServer(AbcTCPServer):
         self._disp = None
 
     def stop(self):
-        """ See more: `AbcTCPServer.stop` """
+        """ See for detail `AbcTCPServer.stop` """
         if self.active:
             self._sockets.clear()
             for (port, address) in tuple(self._acceptors.keys()):
@@ -220,10 +229,12 @@ class TCPClient(AbcTCPClient):
         self._stream_params = (block_size, buffer_size)
 
     def connect(self, stream_handler, host, port, *, timeout=None):
+        """ See for detail `AbcTCPClient.connect` """
         return self._ConnectAwaitable(self._disp, stream_handler,
                                       host, port, timeout, *self._stream_params)
 
     class _ConnectAwaitable(SwitchedCoroutine):
+        """ Awaitable for `TCPClient.connect` """
 
         def __init__(self, disp, stream_handler, host, port, timeout, block_size, buffer_size):
             self._disp = disp

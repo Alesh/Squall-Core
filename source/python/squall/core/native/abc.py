@@ -1,7 +1,14 @@
-""" Abstract base classes (Interfaces)
+""" Internal interfaces
 """
-
+import sys
 from squall.core.abc import ABCMeta, abstractmethod, Callable, Any
+
+if sys.version_info[:2] > (3, 5):
+    Callback = Callable[[Any], None]
+    TaskMethod = Callable[[Any], Any]
+else:
+    Callback = Callable
+    TaskMethod = Callable
 
 
 class EventLoop(metaclass=ABCMeta):
@@ -28,7 +35,7 @@ class EventLoop(metaclass=ABCMeta):
         """ Stops an event dispatching"""
 
     @abstractmethod
-    def setup_timeout(self, callback: Callable[[Any], None],
+    def setup_timeout(self, callback: Callback,
                       seconds: float, result: Any = True) -> Any:
         """ Setup to run the `callback` after a given `seconds` elapsed.
         You can define parameter of `callback` to set `result`.
@@ -41,7 +48,7 @@ class EventLoop(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def setup_ready(self, callback: Callable[[Any], None], fd: int, events: int):
+    def setup_ready(self, callback: Callback, fd: int, events: int):
         """ Setup to run the `callback` when I/O device with
         given `fd` would be ready to read or/and write.
         Returns handle for using with `EventLoop.update_ready` and `EventLoop.cancel_ready`
@@ -58,7 +65,7 @@ class EventLoop(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def setup_signal(self, callback: Callable[[Any], None], signum: int):
+    def setup_signal(self, callback: Callback, signum: int):
         """ Setup to run the `callback` when system signal with a given `signum` received.
         Returns handle for using with `EventLoop.cancel_signal`
         """
@@ -99,8 +106,8 @@ class AutoBuffer(metaclass=ABCMeta):
         """ Maximum size of the read/write buffers. """
 
     @abstractmethod
-    def setup_task(self, callback: Callable[[Any], None], trigger_event: int,
-                   task_method: Callable[[Any], Any], timeout: float) -> Any:
+    def setup_task(self, callback: Callback, trigger_event: int,
+                   task_method: TaskMethod, timeout: float) -> Any:
         """ Calls `task_method` if return a result if it not `None`.
         Otherwise configures an execution of `task_method` at time after a
         `trigger_event` and a call of `callback` if `task_method` return not `None`.

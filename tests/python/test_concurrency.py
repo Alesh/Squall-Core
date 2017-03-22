@@ -51,14 +51,14 @@ def test_timing(callog):
         api.stop()
 
     api = API()
-    coro01 = api.spawn(test01)
-    callog.append((coro01.__name__, 'C', 1))
-    coro02 = api.spawn(test02)
-    callog.append((coro02.__name__, 'C', 2))
-    coro05 = api.spawn(test05)
-    callog.append((coro05.__name__, 'C', 5))
-    coro07 = api.spawn(test07)
-    callog.append((coro07.__name__, 'C', 7))
+    coro01 = api.submit(test01)
+    callog.append(('test01', 'C', 1))
+    coro02 = api.submit(test02)
+    callog.append(('test02', 'C', 2))
+    coro05 = api.submit(test05)
+    callog.append(('test05', 'C', 5))
+    coro07 = api.submit(test07)
+    callog.append(('test07', 'C', 7))
     api.start()
 
     print(callog)
@@ -128,13 +128,13 @@ def test_ready_io(callog, fifo_files):
             callog.append('*')
             cnt += 1
             if cnt == 1:
-                api.spawn(corofuncTX, tx_fifo)
-                api.spawn(corofuncRX, rx_fifo)
+                api.submit(corofuncTX, tx_fifo)
+                api.submit(corofuncRX, rx_fifo)
         api.stop()
         callog.append('>>')
 
     api = API()
-    api.spawn(corofunc)
+    api.submit(corofunc)
     api.start()
 
     print(callog)
@@ -164,7 +164,7 @@ def test_real_future(callog, executor):
         callog.append('<FT')
         try:
             future = executor.submit(func_sleep, seconds)
-            result = await api.wait(future)
+            result = await api.complete(future)
             callog.append(result)
         finally:
             callog.append('FT>')
@@ -177,12 +177,12 @@ def test_real_future(callog, executor):
             callog.append('*')
             cnt += 1
             if cnt == 1:
-                api.spawn(corofuncFT, executor, 0.35)
+                api.submit(corofuncFT, executor, 0.35)
         api.stop()
         callog.append('>>')
 
     api = API()
-    api.spawn(corofunc)
+    api.submit(corofunc)
     api.start()
 
     print(callog)
@@ -200,7 +200,7 @@ def test_async_future(callog):
         callog.append('<FT')
         try:
             future = api.submit(corofunc_sleep, seconds)
-            result = await api.wait(future)
+            result = await api.complete(future)
             callog.append(result)
         finally:
             callog.append('FT>')
@@ -213,12 +213,12 @@ def test_async_future(callog):
             callog.append('*')
             cnt += 1
             if cnt == 1:
-                api.spawn(corofuncFT, 0.35)
+                api.submit(corofuncFT, 0.35)
         api.stop()
         callog.append('>>')
 
     api = API()
-    api.spawn(corofunc)
+    api.submit(corofunc)
     api.start()
 
     print(callog)
@@ -227,12 +227,12 @@ def test_async_future(callog):
 
 def test_both_future(callog, executor):
 
-    async def corofuncFT(api, seconds):
+    async def corofuncFT(api):
         callog.append('<FT')
         try:
-            future_a = api.submit(corofunc_sleep, seconds)
-            future_r = executor.submit(func_sleep, seconds)
-            result = await api.wait(future_a, future_r)
+            future_a = api.submit(corofunc_sleep, 0.33)
+            future_r = executor.submit(func_sleep, 0.35)
+            result = await api.complete(future_a, future_r)
             callog.append(result)
         finally:
             callog.append('FT>')
@@ -245,12 +245,12 @@ def test_both_future(callog, executor):
             callog.append('*')
             cnt += 1
             if cnt == 1:
-                api.spawn(corofuncFT, 0.33)
+                api.submit(corofuncFT)
         api.stop()
         callog.append('>>')
 
     api = API()
-    api.spawn(corofunc)
+    api.submit(corofunc)
     api.start()
 
     print(callog)

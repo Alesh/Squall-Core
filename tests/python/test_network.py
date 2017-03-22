@@ -60,7 +60,7 @@ class EchoTestServer(TCPServer):
         f3 = api.submit(self.client_request, 150)
         f4 = api.submit(self.client_request, 250)
         try:
-            result = await api.wait(f0, f1, f2, f3, f4, timeout=self.timeout)
+            result = await api.complete(f0, f1, f2, f3, f4, timeout=self.timeout)
             result = tuple(item.split(b'!')[1:] for item in sorted(result))
         except Exception as exc:
             result = exc
@@ -68,7 +68,7 @@ class EchoTestServer(TCPServer):
         self.stop()
 
     def before_start(self, api):
-        api.spawn(self.client_runner)
+        api.submit(self.client_runner)
 
 
 def test_network(callog):

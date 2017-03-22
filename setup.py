@@ -6,7 +6,7 @@ if sys.version_info[:2] < (3, 5):
 
 settings = {
     'name': 'Squall',
-    'version': '0.1.dev0',
+    'version': '0.1.dev21',
     'author': 'Alexey Poryadin',
     'author_email': 'alexey.poryadin@gmail.com',
     'description': "The Squall this is set of modules which implements"

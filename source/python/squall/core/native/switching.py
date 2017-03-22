@@ -13,14 +13,95 @@ except ImportError:
     from squall.core.native.asyncio_ import EventLoop
 
 
+class Dispatcher(AbcDispatcher):
+    """ Native implementation of the coroutine dispatcher/switcher.
+    """
+
+    def __init__(self):
+        self.__current = deque()
+        self._loop = EventLoop()
+
+    @property
+    def READ(self):
+        """ See for detail `AbcDispatcher.READ` """
+        return self._loop.READ
+
+    @property
+    def WRITE(self):
+        """ See for detail `AbcDispatcher.WRITE` """
+        return self._loop.WRITE
+
+    @property
+    def _current(self):
+        """ Returns current coroutine """
+        assert len(self.__current) > 0
+        return self.__current[0]
+
+    def submit(self, corofunc, *args, **kwargs) -> AbcFuture:
+        """ See for detail `AbcDispatcher.submit` """
+        coro = FuturedCoroutine(self, corofunc, *args, **kwargs)
+        assert isinstance(coro, Coroutine)
+        self.switch(coro, None)
+        return coro
+
+    def switch(self, coro: Coroutine, value):
+        """ See for detail `AbcDispatcher.switch` """
+        try:
+            self.__current.appendleft(coro)
+            if isinstance(value, BaseException):
+                coro.throw(value)
+            elif isinstance(value, type) and issubclass(value, BaseException):
+                coro.throw(value)
+            else:
+                coro.send(value)
+            return (None, None)
+        except BaseException as exc:
+            if not isinstance(exc, (StopIteration, GeneratorExit)):
+                logging.exception("Uncaught exception when switch({}, {})"
+                                  "".format(coro, value))
+            elif isinstance(exc, StopIteration):
+                if isinstance(coro, FuturedCoroutine):
+                    coro.set_result(exc.value)
+                return (exc.value, exc)
+            if isinstance(coro, FuturedCoroutine):
+                coro.set_exception(exc)
+            return (None, exc)
+        finally:
+            self.__current.popleft()
+
+    def start(self):
+        """ See for detail `AbcDispatcher.start` """
+        return self._loop.start()
+
+    def stop(self):
+        """ See for detail `AbcDispatcher.stop` """
+        return self._loop.stop()
+
+    def sleep(self, seconds=None):
+        """ See for detail `AbcDispatcher.sleep` """
+        return _SleepCoroutine(self, seconds)
+
+    def ready(self, fd, events, *, timeout=None):
+        """ See for detail `AbcDispatcher.ready` """
+        return _ReadyCoroutine(self, fd, events, timeout)
+
+    def signal(self, signum):
+        """ See for detail `AbcDispatcher.signal` """
+        return _SignalCoroutine(self, signum)
+
+    def complete(self, *futures, timeout=None):
+        """ See for detail `AbcDispatcher.complete` """
+        return _WaitCoroutine(self, futures, timeout)
+
+
 class SwitchedCoroutine(Coroutine):
     """ Switched coroutine
     """
 
-    def __init__(self, disp: AbcDispatcher, *args, **kwargs):
+    def __init__(self, disp: Dispatcher, *args, **kwargs):
         self._args = args
         self._kwargs = kwargs
-        self._callback = partial(disp.switch, disp.current)
+        self._callback = partial(disp.switch, disp._current)
 
     def setup(self, callback, *args, **kwargs):
         """ Called to setup event watching """
@@ -47,93 +128,6 @@ class SwitchedCoroutine(Coroutine):
         """ Called when coroutine received request to raise exception. """
         self.cancel()
         super().throw(typ, val, tb)
-
-
-class Dispatcher(AbcDispatcher):
-    """ Coroutine event dispatcher / switcher
-    """
-
-    def __init__(self):
-        self._current = deque()
-        self._loop = EventLoop()
-
-    @property
-    def READ(self):
-        """ See more: `AbcDispatcher.READ` """
-        return self._loop.READ
-
-    @property
-    def WRITE(self):
-        """ See more: `AbcDispatcher.WRITE` """
-        return self._loop.WRITE
-
-    @property
-    def current(self) -> Coroutine:
-        """ See more: `AbcDispatcher.current` """
-        return self._current[0] if len(self._current) else None
-
-    def spawn(self, corofunc, *args, **kwargs):
-        """ See more: `AbcDispatcher.spawn` """
-        coro = corofunc(self, *args, **kwargs)
-        assert isinstance(coro, Coroutine)
-        self.switch(coro, None)
-        return coro
-
-    def submit(self, corofunc, *args, **kwargs) -> AbcFuture:
-        """ See more: `AbcDispatcher.submit` """
-        coro = FuturedCoroutine(self, corofunc, *args, **kwargs)
-        assert isinstance(coro, Coroutine)
-        self.switch(coro, None)
-        return coro
-
-    def switch(self, coro: Coroutine, value):
-        """ See more: `AbcDispatcher.switch` """
-        try:
-            self._current.appendleft(coro)
-            if isinstance(value, BaseException):
-                coro.throw(value)
-            elif isinstance(value, type) and issubclass(value, BaseException):
-                coro.throw(value)
-            else:
-                coro.send(value)
-            return (None, None)
-        except BaseException as exc:
-            if not isinstance(exc, (StopIteration, GeneratorExit)):
-                logging.exception("Uncaught exception when switch({}, {})"
-                                  "".format(coro, value))
-            elif isinstance(exc, StopIteration):
-                if isinstance(coro, FuturedCoroutine):
-                    coro.set_result(exc.value)
-                return (exc.value, exc)
-            if isinstance(coro, FuturedCoroutine):
-                coro.set_exception(exc)
-            return (None, exc)
-        finally:
-            self._current.popleft()
-
-    def start(self):
-        """ See more: `AbcDispatcher.start` """
-        return self._loop.start()
-
-    def stop(self):
-        """ See more: `AbcDispatcher.stop` """
-        return self._loop.stop()
-
-    def sleep(self, seconds=None):
-        """ See more: `AbcDispatcher.sleep` """
-        return _SleepCoroutine(self, seconds)
-
-    def ready(self, fd, events, *, timeout=None):
-        """ See more: `AbcDispatcher.ready` """
-        return _ReadyCoroutine(self, fd, events, timeout)
-
-    def signal(self, signum):
-        """ See more: `AbcDispatcher.signal` """
-        return _SignalCoroutine(self, signum)
-
-    def wait(self, *futures, timeout=None):
-        """ See more: `AbcDispatcher.wait` """
-        return _WaitCoroutine(self, futures, timeout)
 
 
 class _SleepCoroutine(SwitchedCoroutine):

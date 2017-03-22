@@ -23,7 +23,6 @@ async def echo_handler(api, connection_socket, addr):
                 connection_socket.send(data)
             else:
                 raise ConnectionResetError("Connection reset by peer")
-            break
     except IOError as exc:
         logging.warning("[{}]Connection fail: {}".format(addr, exc))
 
@@ -60,7 +59,7 @@ async def echo_acceptor(api, listen_socket):
                 while True:
                     try:
                         args = listen_socket.accept()
-                        connections[args] = api.spawn(serve_connection, *args)
+                        connections[args] = api.submit(serve_connection, *args)
                     except IOError as exc:
                         if exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
                             break
@@ -107,11 +106,11 @@ def bind_sockets(port, host=None, backlog=128):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
 
     api = API()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077
     for socket_ in bind_sockets(port):
-        api.spawn(echo_acceptor, socket_)
-    api.spawn(terminator)
+        api.submit(echo_acceptor, socket_)
+    api.submit(terminator)
     api.start()
