@@ -156,7 +156,7 @@ def executor():
 
 def func_sleep(seconds):
     time.sleep(seconds)
-    return 'DONE!R'
+    return 'DONE!R', time.time()
 
 
 def test_real_future(callog, executor):
@@ -165,7 +165,7 @@ def test_real_future(callog, executor):
         try:
             future = executor.submit(func_sleep, seconds)
             result = await api.complete(future)
-            callog.append(result)
+            callog.append(result[0])
         finally:
             callog.append('FT>')
 
@@ -191,7 +191,7 @@ def test_real_future(callog, executor):
 
 async def corofunc_sleep(api, seconds):
     await api.sleep(seconds)
-    return 'DONE!A'
+    return 'DONE!A', time.time()
 
 
 def test_async_future(callog):
@@ -201,7 +201,7 @@ def test_async_future(callog):
         try:
             future = api.submit(corofunc_sleep, seconds)
             result = await api.complete(future)
-            callog.append(result)
+            callog.append(result[0])
         finally:
             callog.append('FT>')
 
@@ -233,7 +233,7 @@ def test_both_future(callog, executor):
             future_a = api.submit(corofunc_sleep, 0.33)
             future_r = executor.submit(func_sleep, 0.35)
             result = await api.complete(future_a, future_r)
-            callog.append(result)
+            callog.append(tuple(A[0] for A in sorted(result, key=lambda A: A[1])))
         finally:
             callog.append('FT>')
 
