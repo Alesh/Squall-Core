@@ -5,12 +5,12 @@ from functools import partial
 
 from squall.core.abc import Dispatcher as AbcDispatcher
 from squall.core.abc import Future as AbcFuture
-from squall.core.native.futures import FuturedCoroutine, FutureGroup
+from squall.core_.futures import FuturedCoroutine, FutureGroup
 
 try:
-    from squall.core.native.tornado_ import EventLoop
+    from squall.core_tornado import EventLoop
 except ImportError:
-    from squall.core.native.asyncio_ import EventLoop
+    from squall.core_asyncio import EventLoop
 
 
 class Dispatcher(AbcDispatcher):

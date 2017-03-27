@@ -1,8 +1,8 @@
 import logging
 
 import pytest
-from squall.core.native.switching import Dispatcher
-from squall.core.native.switching import SwitchedCoroutine as BaseSwitchedCoroutine
+from squall.core_.switching import Dispatcher
+from squall.core_.switching import SwitchedCoroutine as BaseSwitchedCoroutine
 
 
 @pytest.yield_fixture

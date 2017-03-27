@@ -13,11 +13,8 @@ settings = {
                    "the cooperative multitasking based on event-driven"
                    "switching async/await coroutines.",
     'namespace_packages': ['squall'],
-    'package_dir': {
-        'squall': 'source/python/squall',
-        '': 'source/python',
-    },
-    'packages': ['squall.core'],
+    'packages': ['squall.core', 'squall.core_'],
+    'py_modules': ['squall.core_asyncio', 'squall.core_tornado'],
     'setup_requires': ['pytest-runner'],
     'tests_require': ['pytest', 'pytest_catchlog'],
     'zip_safe': False

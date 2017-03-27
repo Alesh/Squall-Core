@@ -4,7 +4,7 @@ import logging
 import signal
 from time import time
 
-from squall.core.native.abc import EventLoop as AbcEventLoop
+from squall.core_.abc import EventLoop as AbcEventLoop
 from tornado.ioloop import IOLoop
 
 

@@ -11,9 +11,9 @@ from socket import SocketType, SHUT_RDWR
 from squall.core.abc import StreamHandler
 from squall.core.abc import TCPClient as AbcTCPClient
 from squall.core.abc import TCPServer as AbcTCPServer
-from squall.core.native.abc import EventLoop, Callable
-from squall.core.native.iostream import IOStream, AutoBuffer
-from squall.core.native.switching import Dispatcher, SwitchedCoroutine
+from squall.core_.abc import EventLoop, Callable
+from squall.core_.iostream import IOStream, AutoBuffer
+from squall.core_.switching import Dispatcher, SwitchedCoroutine
 
 
 if sys.version_info[:2] > (3, 5):

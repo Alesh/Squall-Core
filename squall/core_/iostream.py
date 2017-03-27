@@ -1,9 +1,9 @@
 from functools import partial
 
 from squall.core.abc import abstractmethod, IOStream as AbcIOStream
-from squall.core.native.abc import AutoBuffer as AbcAutoBuffer
-from squall.core.native.abc import EventLoop
-from squall.core.native.switching import Dispatcher, SwitchedCoroutine
+from squall.core_.abc import AutoBuffer as AbcAutoBuffer
+from squall.core_.abc import EventLoop
+from squall.core_.switching import Dispatcher, SwitchedCoroutine
 
 
 class AutoBuffer(AbcAutoBuffer):
