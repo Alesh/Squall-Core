@@ -1,5 +1,10 @@
 import sys
-from setuptools import setup
+from setuptools import setup, Extension
+
+try:
+    from Cython.Build import cythonize
+except:
+    cythonize = None
 
 if sys.version_info[:2] < (3, 5):
     raise NotImplementedError("Required python version 3.5 or greater")
@@ -20,4 +25,13 @@ settings = {
     'zip_safe': False
 }
 
-setup(**settings)
+try:
+    if cythonize is not None:
+        settings['ext_modules'] = cythonize([
+            Extension('squall.core_cython',
+                      ['squall/core_cython.pyx'],
+                      libraries=['ev'])])
+    setup(**settings)
+except:
+    settings.pop('ext_modules', None)
+    setup(**settings)

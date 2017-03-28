@@ -9,7 +9,7 @@ from tornado.ioloop import IOLoop
 
 
 class EventLoop(AbcEventLoop):
-    """ tornado based implementation of `squall.core.native.cb.abc.EventLoop`
+    """ tornado based implementation of `squall.core_.abc.EventLoop`
     """
 
     READ = IOLoop.READ

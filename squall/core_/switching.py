@@ -8,9 +8,13 @@ from squall.core.abc import Future as AbcFuture
 from squall.core_.futures import FuturedCoroutine, FutureGroup
 
 try:
-    from squall.core_tornado import EventLoop
+    from squall.core_cython import EventLoop
 except ImportError:
-    from squall.core_asyncio import EventLoop
+    try:
+        from squall.core_tornado import EventLoop
+    except ImportError:
+        from squall.core_asyncio import EventLoop
+
 
 
 class Dispatcher(AbcDispatcher):

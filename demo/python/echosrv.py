@@ -37,9 +37,6 @@ class EchoServer(TCPServer):
                     stream.write(data)
                 else:
                     raise ConnectionResetError("Connection reset by peer")
-
-                await stream.flush(timeout=next(timeout))
-
         except IOError as exc:
             logging.warning("[{}]Connection fail: {}".format(addr, exc))
         finally:

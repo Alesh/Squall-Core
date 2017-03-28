@@ -181,8 +181,13 @@ def test_real_future(callog, executor):
         api.stop()
         callog.append('>>')
 
+    async def walker(api):
+        while True:
+            await api.sleep(0.001)
+
     api = API()
     api.submit(corofunc)
+    api.submit(walker)
     api.start()
 
     print(callog)

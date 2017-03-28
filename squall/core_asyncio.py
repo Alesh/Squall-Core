@@ -7,7 +7,7 @@ from squall.core_.abc import EventLoop as AbcEventLoop
 
 
 class EventLoop(AbcEventLoop):
-    """ asyncio based implementation of `squall.core.native.cb.abc.EventLoop`
+    """ asyncio based implementation of `squall.core_.abc.EventLoop`
     """
 
     READ = 1
