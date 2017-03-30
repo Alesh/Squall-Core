@@ -1,4 +1,5 @@
 import logging
+from time import time
 from collections import deque
 from collections.abc import Coroutine
 from functools import partial
@@ -14,7 +15,6 @@ except ImportError:
         from squall.core_tornado import EventLoop
     except ImportError:
         from squall.core_asyncio import EventLoop
-
 
 
 class Dispatcher(AbcDispatcher):
@@ -238,12 +238,16 @@ class _WaitCoroutine(SwitchedCoroutine):
             except BaseException as exc:
                 callback(exc)
 
+        deadline = time() + timeout if timeout > 0 else None
+
+        def check_timeout(revents):
+            print('!!!')
+            if deadline is not None and time() > deadline:
+                callback(timeout_exc)
+
         future.add_done_callback(done_callback)
         self._handles.append(future)
-        if timeout > 0:
-            self._handles.append(self._loop.setup_timeout(callback, timeout, timeout_exc))
-        else:
-            self._handles.append(None)
+        self._handles.append(self._loop.setup_timeout(check_timeout, 0.01))
 
     def cancel(self):
         if self._handles:

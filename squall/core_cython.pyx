@@ -174,15 +174,13 @@ cdef class EventLoop:
     cpdef _on_sigint(self, int revents):
         self.stop()
 
-    cpdef s tart(self):
+    cpdef start(self):
         logging.info("Using cython/libev based callback classes")
         self.setup_signal(self._on_sigint, signal.SIGINT)
         try:
             self._running = 1
             while self._running != 0:
                 ev_run(self._p_loop, EVRUN_ONCE)
-                if len(self._readies) + len(self._timeouts) + len(self._signals) == 1:
-                    break
         except KeyboardInterrupt:
             pass
         finally:

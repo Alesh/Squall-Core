@@ -15,22 +15,9 @@ class EventLoop(AbcEventLoop):
 
     def __init__(self):
         self._fds = dict()
-        self._pendings = 0
         self._signals = dict()
         self._loop = asyncio.get_event_loop()
         super().__init__()
-
-    def _inc_pending(self):
-        self._pendings += 1
-
-    def _dec_pending(self):
-        def check_fishish():
-            if self._pendings == 0:
-                self.stop()
-
-        self._pendings -= 1
-        if self._pendings == 0:
-            self._loop.call_soon(check_fishish)
 
     def start(self):
         """ See for detail `AbcEventLoop.start` """
@@ -44,14 +31,11 @@ class EventLoop(AbcEventLoop):
     def setup_timeout(self, callback, seconds, result=True):
         """ See for detail `AbcEventLoop.setup_timeout` """
         deadline = self._loop.time() + seconds
-        handle = self._loop.call_at(deadline, callback, result)
-        self._inc_pending()
-        return handle
+        return self._loop.call_at(deadline, callback, result)
 
     def cancel_timeout(self, handle):
         """ See for detail `AbcEventLoop.cancel_timeout` """
         handle.cancel()
-        self._dec_pending()
 
     def setup_ready(self, callback, fd, events):
         """ See for detail `AbcEventLoop.setup_ready` """
@@ -61,7 +45,6 @@ class EventLoop(AbcEventLoop):
         if events & self.WRITE:
             self._loop.add_writer(fd, callback, self.WRITE)
         self._fds[fd] = [callback, events]
-        self._inc_pending()
         return fd
 
     def update_ready(self, handle, events):
@@ -88,7 +71,6 @@ class EventLoop(AbcEventLoop):
             self._loop.remove_reader(fd)
         if events & self.WRITE:
             self._loop.remove_writer(fd)
-        self._dec_pending()
 
     def _handle_signal(self, signum):
         for callback in tuple(self._signals[signum]):
@@ -100,7 +82,6 @@ class EventLoop(AbcEventLoop):
             self._loop.add_signal_handler(signum, self._handle_signal, signum)
             self._signals[signum] = list()
         self._signals[signum].append(callback)
-        self._inc_pending()
         return signum, callback
 
     def cancel_signal(self, handler):
@@ -108,4 +89,3 @@ class EventLoop(AbcEventLoop):
         signum, callback = handler
         if signum in self._signals:
             self._signals[signum].remove(callback)
-            self._dec_pending()

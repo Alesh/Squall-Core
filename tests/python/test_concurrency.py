@@ -48,7 +48,7 @@ def test_timing(callog):
     async def test07(api):
         await api.sleep(0.77)
         callog.append(('test07', 'T', 7))
-        coro01.close()
+        api.stop()
 
     api = API()
     coro01 = api.submit(test01)
@@ -181,13 +181,8 @@ def test_real_future(callog, executor):
         api.stop()
         callog.append('>>')
 
-    async def walker(api):
-        while True:
-            await api.sleep(0.001)
-
     api = API()
     api.submit(corofunc)
-    api.submit(walker)
     api.start()
 
     print(callog)

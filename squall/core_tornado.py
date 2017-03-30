@@ -16,22 +16,9 @@ class EventLoop(AbcEventLoop):
     WRITE = IOLoop.WRITE
 
     def __init__(self):
-        self._pendings = 0
         self._signals = dict()
         self._loop = IOLoop(make_current=False)
         super().__init__()
-
-    def _inc_pending(self):
-        self._pendings += 1
-
-    def _dec_pending(self):
-        def check_fishish():
-            if self._pendings == 0:
-                self.stop()
-
-        self._pendings -= 1
-        if self._pendings == 0:
-            self._loop.add_callback(check_fishish)
 
     def start(self):
         """ See for detail `AbcEventLoop.start` """
@@ -46,13 +33,11 @@ class EventLoop(AbcEventLoop):
         """ See for detail `AbcEventLoop.setup_timeout` """
         deadline = time() + seconds
         handle = self._loop.add_timeout(deadline, callback, result)
-        self._inc_pending()
         return handle
 
     def cancel_timeout(self, handle):
         """ See for detail `AbcEventLoop.setup_timeout` """
         self._loop.remove_timeout(handle)
-        self._dec_pending()
 
     def setup_ready(self, callback, fd, events):
         """ See for detail `AbcEventLoop.setup_ready` """
@@ -64,7 +49,6 @@ class EventLoop(AbcEventLoop):
                 callback(revents)
 
         self._loop.add_handler(fd, handler, events)
-        self._inc_pending()
         return fd
 
     def update_ready(self, handle, events: int):
@@ -76,7 +60,6 @@ class EventLoop(AbcEventLoop):
         """ See for detail `AbcEventLoop.cancel_ready` """
         fd = handle
         self._loop.remove_handler(fd)
-        self._dec_pending()
 
     def _handle_signal(self, signum, _):
         for callback in tuple(self._signals[signum]):
@@ -89,7 +72,6 @@ class EventLoop(AbcEventLoop):
             self._signals[signum] = list()
         if callback not in self._signals[signum]:
             self._signals[signum].append(callback)
-        self._inc_pending()
         return signum, callback
 
     def cancel_signal(self, handler):
@@ -97,4 +79,3 @@ class EventLoop(AbcEventLoop):
         signum, callback = handler
         if signum in self._signals:
             self._signals[signum].remove(callback)
-            self._dec_pending()

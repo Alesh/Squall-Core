@@ -3,7 +3,7 @@ from setuptools import setup, Extension
 
 try:
     from Cython.Build import cythonize
-except:
+except ImportError:
     cythonize = None
 
 if sys.version_info[:2] < (3, 5):
@@ -11,7 +11,7 @@ if sys.version_info[:2] < (3, 5):
 
 settings = {
     'name': 'Squall',
-    'version': '0.1.dev21',
+    'version': '0.1.dev27',
     'author': 'Alexey Poryadin',
     'author_email': 'alexey.poryadin@gmail.com',
     'description': "The Squall this is set of modules which implements"
@@ -32,6 +32,6 @@ try:
                       ['squall/core_cython.pyx'],
                       libraries=['ev'])])
     setup(**settings)
-except:
+except Exception:
     settings.pop('ext_modules', None)
     setup(**settings)
