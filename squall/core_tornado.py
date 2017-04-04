@@ -29,18 +29,18 @@ class EventLoop(AbcEventLoop):
         """ See for detail `AbcEventLoop.stop` """
         self._loop.stop()
 
-    def setup_timeout(self, callback, seconds, result=True):
-        """ See for detail `AbcEventLoop.setup_timeout` """
+    def setup_timer(self, callback, seconds):
+        """ See for detail `AbcEventLoop.setup_timer` """
         deadline = time() + seconds
-        handle = self._loop.add_timeout(deadline, callback, result)
+        handle = self._loop.add_timeout(deadline, callback, True)
         return handle
 
-    def cancel_timeout(self, handle):
-        """ See for detail `AbcEventLoop.setup_timeout` """
+    def cancel_timer(self, handle):
+        """ See for detail `AbcEventLoop.setup_timer` """
         self._loop.remove_timeout(handle)
 
-    def setup_ready(self, callback, fd, events):
-        """ See for detail `AbcEventLoop.setup_ready` """
+    def setup_io(self, callback, fd, events):
+        """ See for detail `AbcEventLoop.setup_io` """
 
         def handler(_, revents):
             if revents & IOLoop.ERROR:
@@ -51,13 +51,13 @@ class EventLoop(AbcEventLoop):
         self._loop.add_handler(fd, handler, events)
         return fd
 
-    def update_ready(self, handle, events: int):
-        """ See for detail `AbcEventLoop.update_ready` """
+    def update_io(self, handle, events: int):
+        """ See for detail `AbcEventLoop.update_io` """
         fd = handle
         self._loop.update_handler(fd, events)
 
-    def cancel_ready(self, handle):
-        """ See for detail `AbcEventLoop.cancel_ready` """
+    def cancel_io(self, handle):
+        """ See for detail `AbcEventLoop.cancel_io` """
         fd = handle
         self._loop.remove_handler(fd)
 

@@ -35,33 +35,31 @@ class EventLoop(metaclass=ABCMeta):
         """ Stops an event dispatching"""
 
     @abstractmethod
-    def setup_timeout(self, callback: Callback,
-                      seconds: float, result: Any = True) -> Any:
+    def setup_timer(self, callback: Callback, seconds: float) -> Any:
         """ Setup to run the `callback` after a given `seconds` elapsed.
-        You can define parameter of `callback` to set `result`.
-        Returns handle for using with `EventLoop.cancel_timeout`
+        Returns handle for using with `EventLoop.cancel_timer`
         """
 
     @abstractmethod
-    def cancel_timeout(self, handle: Any):
-        """ Cancels callback which was setup with `EventLoop.setup_timeout`.
+    def cancel_timer(self, handle: Any):
+        """ Cancels callback which was setup with `EventLoop.setup_timer`.
         """
 
     @abstractmethod
-    def setup_ready(self, callback: Callback, fd: int, events: int):
+    def setup_io(self, callback: Callback, fd: int, events: int):
         """ Setup to run the `callback` when I/O device with
         given `fd` would be ready to read or/and write.
-        Returns handle for using with `EventLoop.update_ready` and `EventLoop.cancel_ready`
+        Returns handle for using with `EventLoop.update_io` and `EventLoop.cancel_io`
         """
 
     @abstractmethod
-    def update_ready(self, handle: Any, events: int):
-        """ Updates call settings for callback which was setup with `EventLoop.setup_ready`.
+    def update_io(self, handle: Any, events: int):
+        """ Updates call settings for callback which was setup with `EventLoop.setup_io`.
         """
 
     @abstractmethod
-    def cancel_ready(self, handle: Any):
-        """ Cancels callback which was setup with `EventLoop.setup_ready`.
+    def cancel_io(self, handle: Any):
+        """ Cancels callback which was setup with `EventLoop.setup_io`.
         """
 
     @abstractmethod

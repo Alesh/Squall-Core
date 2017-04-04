@@ -186,9 +186,9 @@ cdef class EventLoop:
         finally:
             self._running = 0
             for handler in tuple(self._readies):
-                self.cancel_ready(handler)
+                self.cancel_io(handler)
             for handler in tuple(self._timeouts):
-                self.cancel_timeout(handler)
+                self.cancel_timer(handler)
             for handler in tuple(self._signals):
                 self.cancel_signal(handler)
 
@@ -197,31 +197,31 @@ cdef class EventLoop:
             self._running = 0
             ev_break(self._p_loop, EVBREAK_ONE)
 
-    cpdef setup_ready(self, callback, int fd, int events):
+    cpdef setup_io(self, callback, int fd, int events):
         ready_handle = ReadyHandle(callback, fd, events)
         if ready_handle.start(self._p_loop):
             self._readies.add(ready_handle)
             return ready_handle
 
-    cpdef update_ready(self, ReadyHandle ready_handle, int events):
+    cpdef update_io(self, ReadyHandle ready_handle, int events):
         if ready_handle in self._readies:
             return ready_handle.update(self._p_loop, events)
         return False
 
-    cpdef cancel_ready(self, ReadyHandle ready_handle):
+    cpdef cancel_io(self, ReadyHandle ready_handle):
         if ready_handle in self._readies:
             ready_handle.stop(self._p_loop)
             self._readies.remove(ready_handle)
             return True
         return False
 
-    cpdef setup_timeout(self, callback, double seconds, result=True):
-        timeout_handle = TimeoutHandle(callback, seconds, result)
+    cpdef setup_timer(self, callback, double seconds):
+        timeout_handle = TimeoutHandle(callback, seconds, True)
         if timeout_handle.start(self._p_loop):
             self._timeouts.add(timeout_handle)
             return timeout_handle
 
-    cpdef cancel_timeout(self, TimeoutHandle timeout_handle):
+    cpdef cancel_timer(self, TimeoutHandle timeout_handle):
         if timeout_handle in self._timeouts:
             timeout_handle.stop(self._p_loop)
             self._timeouts.remove(timeout_handle)

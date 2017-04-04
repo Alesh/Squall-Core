@@ -97,11 +97,11 @@ class _SocketAcceptor(object):
                         logging.error("Exception while listening: {}".format(e))
 
         self._loop = event_loop
-        self._handle = self._loop.setup_ready(acceptor, socket_.fileno(), self._loop.READ)
+        self._handle = self._loop.setup_io(acceptor, socket_.fileno(), self._loop.READ)
 
     def close(self):
         """ See more `AbcSocketAcceptor.close` """
-        self._loop.cancel_ready(self._handle)
+        self._loop.cancel_io(self._handle)
 
 
 class _SocketStream(IOStream):
@@ -288,11 +288,12 @@ class TCPClient(AbcTCPClient):
                 socket_ = socket.socket()
                 socket_.setblocking(0)
                 socket_.settimeout(0)
-                self._handles.append(self._loop.setup_ready(partial(self.on_connect, callback, socket_),
-                                                            socket_.fileno(), self._loop.WRITE))
+                self._handles.append(self._loop.setup_io(partial(self.on_connect, callback, socket_),
+                                                         socket_.fileno(), self._loop.WRITE))
                 if timeout > 0:
-                    self._handles.append(self._loop.setup_timeout(partial(self.on_connect, callback, socket_),
-                                                                  timeout, timeout_exc))
+                    def callback_(revents):
+                        self.on_connect(callback, socket_, timeout_exc)
+                    self._handles.append(self._loop.setup_timer(callback_, timeout))
                 else:
                     self._handles.append(None)
                 try:
@@ -305,9 +306,9 @@ class TCPClient(AbcTCPClient):
         def cancel(self):
             if len(self._handles) == 2:
                 ready, timeout = self._handles
-                self._loop.cancel_ready(ready)
+                self._loop.cancel_io(ready)
                 if timeout is not None:
-                    self._loop.cancel_timeout(timeout)
+                    self._loop.cancel_timer(timeout)
             elif len(self._handles) == 1:
                 future = self._handles[0]
                 if future.running():

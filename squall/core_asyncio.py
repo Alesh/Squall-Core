@@ -28,17 +28,17 @@ class EventLoop(AbcEventLoop):
         """ See for detail `AbcEventLoop.stop` """
         self._loop.stop()
 
-    def setup_timeout(self, callback, seconds, result=True):
-        """ See for detail `AbcEventLoop.setup_timeout` """
+    def setup_timer(self, callback, seconds):
+        """ See for detail `AbcEventLoop.setup_timer` """
         deadline = self._loop.time() + seconds
-        return self._loop.call_at(deadline, callback, result)
+        return self._loop.call_at(deadline, callback, True)
 
-    def cancel_timeout(self, handle):
-        """ See for detail `AbcEventLoop.cancel_timeout` """
+    def cancel_timer(self, handle):
+        """ See for detail `AbcEventLoop.cancel_timer` """
         handle.cancel()
 
-    def setup_ready(self, callback, fd, events):
-        """ See for detail `AbcEventLoop.setup_ready` """
+    def setup_io(self, callback, fd, events):
+        """ See for detail `AbcEventLoop.setup_io` """
         assert events & (self.READ | self.WRITE) == events
         if events & self.READ:
             self._loop.add_reader(fd, callback, self.READ)
@@ -47,8 +47,8 @@ class EventLoop(AbcEventLoop):
         self._fds[fd] = [callback, events]
         return fd
 
-    def update_ready(self, handle, events):
-        """ See for detail `AbcEventLoop.setup_ready` """
+    def update_io(self, handle, events):
+        """ See for detail `AbcEventLoop.setup_io` """
         fd = handle
         callback, _events = self._fds[fd]
         if _events != events:
@@ -62,8 +62,8 @@ class EventLoop(AbcEventLoop):
                 self._loop.remove_writer(fd)
             self._fds[fd][1] = events
 
-    def cancel_ready(self, handle):
-        """ See for detail `AbcEventLoop.cancel_ready` """
+    def cancel_io(self, handle):
+        """ See for detail `AbcEventLoop.cancel_io` """
         fd = handle
         _, events = self._fds.pop(fd)
         assert events & (self.READ | self.WRITE) == events

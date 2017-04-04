@@ -10,7 +10,7 @@ if sys.version_info[:2] < (3, 5):
     raise NotImplementedError("Required python version 3.5 or greater")
 
 settings = {
-    'name': 'Squall',
+    'name': 'Squall-Core',
     'version': '0.1.dev27',
     'author': 'Alexey Poryadin',
     'author_email': 'alexey.poryadin@gmail.com',

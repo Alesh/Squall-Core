@@ -22,13 +22,13 @@ class EchoTestServer(TCPServer):
         if stream.active:
             try:
                 data = await stream.read_until(b'>>>', timeout=next(tg))
-                print('!! data', data)
                 if data != b'>>>':
                     return
                 data = await stream.read_exactly(3, timeout=next(tg))
                 if data != b'XXX':
                     return
                 data = await stream.read_until(b'\r\n', timeout=next(tg))
+                print("!!1 data", data)
                 parts = data.split(b'!')
                 sleep_timeout = float(parts[1]) / 1000
                 await api.sleep(sleep_timeout)
@@ -45,6 +45,7 @@ class EchoTestServer(TCPServer):
             request = ">>>XXXHELLO!{}\r\n".format(number).encode()
             stream.write(request)
             data = await stream.read_until(b'\r\n', timeout=self.timeout)
+            print("!!! data", data)
             return data[:-2]
 
         try:
@@ -61,6 +62,7 @@ class EchoTestServer(TCPServer):
         f4 = api.submit(self.client_request, 250)
         try:
             result = await api.complete(f0, f1, f2, f3, f4, timeout=self.timeout)
+            print("!!2 result", result)
             result = tuple(item.split(b'!')[1:] for item in sorted(result))
         except Exception as exc:
             result = exc
@@ -85,8 +87,6 @@ def test_network(callog):
         [b'HELLO', b'500'])
     )]
 
-
 if __name__ == '__main__':
-    pytest.main([__file__])
-
+     pytest.main([__file__])
 

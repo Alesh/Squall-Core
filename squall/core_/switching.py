@@ -146,11 +146,11 @@ class _SleepCoroutine(SwitchedCoroutine):
         super().__init__(disp, seconds)
 
     def setup(self, callback, seconds):
-        self._handles.append(self._loop.setup_timeout(callback, seconds))
+        self._handles.append(self._loop.setup_timer(callback, seconds))
 
     def cancel(self):
         if self._handles:
-            self._loop.cancel_timeout(*self._handles)
+            self._loop.cancel_timer(*self._handles)
 
 
 class _ReadyCoroutine(SwitchedCoroutine):
@@ -171,18 +171,20 @@ class _ReadyCoroutine(SwitchedCoroutine):
         timeout_exc = TimeoutError("I/O timeout")
         if timeout < 0:
             return timeout_exc
-        self._handles.append(self._loop.setup_ready(callback, fd, events))
+        self._handles.append(self._loop.setup_io(callback, fd, events))
         if timeout > 0:
-            self._handles.append(self._loop.setup_timeout(callback, timeout, timeout_exc))
+            def callback_(revents):
+                callback(timeout_exc)
+            self._handles.append(self._loop.setup_timer(callback_, timeout))
         else:
             self._handles.append(None)
 
     def cancel(self):
         if self._handles:
             ready, timeout = self._handles
-            self._loop.cancel_ready(ready)
+            self._loop.cancel_io(ready)
             if timeout is not None:
-                self._loop.cancel_timeout(timeout)
+                self._loop.cancel_timer(timeout)
 
 
 class _SignalCoroutine(SwitchedCoroutine):
@@ -238,16 +240,16 @@ class _WaitCoroutine(SwitchedCoroutine):
             except BaseException as exc:
                 callback(exc)
 
-        deadline = time() + timeout if timeout > 0 else None
-
-        def check_timeout(revents):
-            print('!!!')
-            if deadline is not None and time() > deadline:
-                callback(timeout_exc)
-
         future.add_done_callback(done_callback)
         self._handles.append(future)
-        self._handles.append(self._loop.setup_timeout(check_timeout, 0.01))
+
+        def callback_(revents):
+            callback(timeout_exc)
+
+        if timeout > 0:
+            self._handles.append(self._loop.setup_timer(callback_, timeout))
+        else:
+            self._handles.append(None)
 
     def cancel(self):
         if self._handles:
@@ -255,4 +257,4 @@ class _WaitCoroutine(SwitchedCoroutine):
             if future.running():
                 future.cancel()
             if timeout is not None:
-                self._loop.cancel_timeout(timeout)
+                self._loop.cancel_timer(timeout)

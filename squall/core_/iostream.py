@@ -18,7 +18,7 @@ class AutoBuffer(AbcAutoBuffer):
         self._mode = self.READ
         self._block_size = block_size
         self._buffer_size = buffer_size
-        self._handle = self._loop.setup_ready(self._event_handler, fd, self._mode)
+        self._handle = self._loop.setup_io(self._event_handler, fd, self._mode)
 
     @abstractmethod
     def _read_block(self, size: int) -> bytes:
@@ -84,7 +84,7 @@ class AutoBuffer(AbcAutoBuffer):
                     mode |= self.WRITE
             if mode != self._mode:
                 self._mode = mode
-                self._loop.update_ready(self._handle, self._mode)
+                self._loop.update_io(self._handle, self._mode)
 
     @property
     def active(self):
@@ -114,16 +114,18 @@ class AutoBuffer(AbcAutoBuffer):
     def setup_task(self, callback, trigger_event, task_method, timeout):
         """ See for detail `AbcAutoBuffer.setup_task` """
         result = None
-        exec_timeout = TimeoutError("I/O timeout")
+        timeout_exc = TimeoutError("I/O timeout")
         if timeout < 0:
-            result = exec_timeout
+            result = timeout_exc
         elif trigger_event == self.READ:
             result = task_method(self._in)
         elif trigger_event == self.WRITE:
             result = task_method(len(self._out))
         if result is None:
             if timeout > 0:
-                timeout = self._loop.setup_timeout(self._event_handler, timeout, exec_timeout)
+                def callback_(revents):
+                    self._event_handler(timeout_exc)
+                timeout = self._loop.setup_timer(callback_, timeout)
             else:
                 timeout = None
             self._task = (callback, trigger_event, task_method, timeout)
@@ -134,7 +136,7 @@ class AutoBuffer(AbcAutoBuffer):
         if self._task is not None:
             callback, trigger_event, task_method, timeout = self._task
             if timeout is not None:
-                self._loop.cancel_timeout(timeout)
+                self._loop.cancel_timer(timeout)
             self._task = None
 
     def read(self, max_bytes):
@@ -150,14 +152,14 @@ class AutoBuffer(AbcAutoBuffer):
             self._out += block
             if not (self._mode & self.WRITE):
                 self._mode |= self.WRITE
-                self._loop.update_ready(self._handle, self._mode)
+                self._loop.update_io(self._handle, self._mode)
         return len(block)
 
     @abstractmethod
     def close(self):
         """ See for detail `AbcAutoBuffer.close` """
         self.cancel_task()
-        self._loop.cancel_ready(self._handle)
+        self._loop.cancel_io(self._handle)
         self._handle = None
 
 

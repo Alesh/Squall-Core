@@ -258,7 +258,7 @@ def test_both_future(callog, executor):
 
 
 if __name__ == '__main__':
-    # pytest.main([__file__])
-    pytest.main(['-k', 'test_timing'])
+    pytest.main([__file__])
+    # pytest.main(['-k', 'test_ready_io'])
 
 
