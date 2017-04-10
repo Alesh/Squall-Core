@@ -41,7 +41,7 @@ def test_timing(callog):
             callog.append(('test02', 'T', 2))
 
     async def test05(api):
-        await api.sleep(0.55)
+        await api.sleep(0.56)
         callog.append(('test05', 'T', 5))
         coro02.close()
 
