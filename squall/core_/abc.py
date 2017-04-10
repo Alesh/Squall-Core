@@ -103,14 +103,14 @@ class AutoBuffer(metaclass=ABCMeta):
     def buffer_size(self) -> int:
         """ Maximum size of the read/write buffers. """
 
-    @abstractmethod
-    def setup_task(self, callback: Callback, trigger_event: int,
-                   task_method: TaskMethod, timeout: float) -> Any:
-        """ Calls `task_method` if return a result if it not `None`.
-        Otherwise configures an execution of `task_method` at time after a
-        `trigger_event` and a call of `callback` if `task_method` return not `None`.
-        Returns directly or via `callback` TimeoutError if `timeout` is defined and elapsed.
-        """
+    # @abstractmethod
+    # def setup_task(self, callback: Callback, trigger_event: int,
+    #                task_method: TaskMethod, timeout: float) -> Any:
+    #     """ Calls `task_method` if return a result if it not `None`.
+    #     Otherwise configures an execution of `task_method` at time after a
+    #     `trigger_event` and a call of `callback` if `task_method` return not `None`.
+    #     Returns directly or via `callback` TimeoutError if `timeout` is defined and elapsed.
+    #     """
 
     @abstractmethod
     def cancel_task(self):

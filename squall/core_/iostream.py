@@ -65,9 +65,9 @@ class AutoBuffer(AbcAutoBuffer):
             callback, event, method, timeout = self._task
             if event & revents:
                 if event == self.READ:
-                    result = method(self._in)
+                    result = method()
                 elif event == self.WRITE:
-                    result = method(len(self._out))
+                    result = method()
             if result is None and last_error is not None:
                 result = last_error
             if result is not None:
@@ -111,16 +111,39 @@ class AutoBuffer(AbcAutoBuffer):
         """ See for detail `AbcAutoBuffer.buffer_size` """
         return self._buffer_size
 
-    def setup_task(self, callback, trigger_event, task_method, timeout):
+    def setup_read_exactly(self, callback, num_bytes, timeout):
+        """ See for detail `AbcAutoBuffer.read_exactly` """
+        def task_method():
+            if len(self._in) >= num_bytes:
+                return self.read(num_bytes)
+            return None
+        return self._setup_task(callback, self.READ, task_method, timeout)
+
+    def setup_read_until(self, callback, delimiter, max_bytes, timeout):
+        """ See for detail `AbcAutoBuffer.read_exactly` """
+        def task_method():
+            result = None
+            pos = self._in.find(delimiter)
+            if (pos >= 0):
+                result = self.read(pos + len(delimiter))
+            elif max_bytes > 0 and len(self._in) >= max_bytes:
+                result = BufferError("Delimiter not found, but max_bytes reached")
+            return result
+        return self._setup_task(callback, self.READ, task_method, timeout)
+
+    def setup_flush(self, callback, timeout):
+        def task_method():
+            return True if len(self._out) == 0 else None
+        return self._setup_task(callback, self.WRITE, task_method, timeout)
+
+    def _setup_task(self, callback, trigger_event, task_method, timeout):
         """ See for detail `AbcAutoBuffer.setup_task` """
         result = None
         timeout_exc = TimeoutError("I/O timeout")
         if timeout < 0:
             result = timeout_exc
-        elif trigger_event == self.READ:
-            result = task_method(self._in)
-        elif trigger_event == self.WRITE:
-            result = task_method(len(self._out))
+        else:
+            result = task_method()
         if result is None:
             if timeout > 0:
                 def callback_(revents):
@@ -226,18 +249,8 @@ class _ReadUntilCoroutine(SwitchedCoroutine):
         assert isinstance(timeout, (int, float))
         super().__init__(disp, delimiter, max_bytes, timeout)
 
-    def task_method(self, delimiter, max_bytes, incoming_buffer):
-        result = None
-        pos = incoming_buffer.find(delimiter)
-        if (pos >= 0):
-            result = self._auto_buff.read(pos + len(delimiter))
-        elif max_bytes > 0 and len(incoming_buffer) >= max_bytes:
-            result = BufferError("Delimiter not found, but max_bytes reached")
-        return result
-
     def setup(self, callback, delimiter, max_bytes, timeout):
-        task_method = partial(self.task_method, delimiter, max_bytes)
-        result = self._auto_buff.setup_task(callback, self._auto_buff.READ, task_method, timeout)
+        result = self._auto_buff.setup_read_until(callback, delimiter, max_bytes, timeout)
         if result is not None:
             return result
 
@@ -258,15 +271,8 @@ class _ReadExactly(SwitchedCoroutine):
         assert isinstance(timeout, (int, float))
         super().__init__(disp, num_bytes, timeout)
 
-    def task_method(self, num_bytes, incoming_buffer):
-        result = None
-        if len(incoming_buffer) >= num_bytes:
-            result = self._auto_buff.read(num_bytes)
-        return result
-
     def setup(self, callback, num_bytes, timeout):
-        task_method = partial(self.task_method, num_bytes)
-        result = self._auto_buff.setup_task(callback, self._auto_buff.READ, task_method, timeout)
+        result = self._auto_buff.setup_read_exactly(callback, num_bytes, timeout)
         if result is not None:
             return result
 
@@ -284,11 +290,8 @@ class _FlushCoroutine(SwitchedCoroutine):
         assert isinstance(timeout, (int, float))
         super().__init__(disp, timeout)
 
-    def task_method(self, outcoming_buffer_size):
-        return True if outcoming_buffer_size == 0 else None
-
     def setup(self, callback, timeout):
-        result = self._auto_buff.setup_task(callback, self._auto_buff.WRITE, self.task_method, timeout)
+        result = self._auto_buff.setup_flush(callback, timeout)
         if result is not None:
             return result
 
