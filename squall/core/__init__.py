@@ -1,4 +1,4 @@
 """ Squall core module
 """
-from squall.core_.switching import Dispatcher
-from squall.core_.network import TCPServer, TCPClient
+from squall.core.switching import Dispatcher  # noqa
+from squall.core.networking import TCPServer  # noqa

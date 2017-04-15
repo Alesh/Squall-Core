@@ -4,8 +4,8 @@ import logging
 import sys
 from signal import SIGINT
 
-from squall.core import TCPServer
-from squall.core.utils import timeout_gen, Addr
+from squall.core.networking import TCPServer, Addr
+from squall.core.switching import timeout_gen
 
 
 class EchoServer(TCPServer):
@@ -33,11 +33,12 @@ class EchoServer(TCPServer):
                 timeout = timeout_gen(self._timeout)
                 data = await stream.read_until(b'\r\n\r\n', timeout=next(timeout))
                 if data:
-                    await api.sleep(0.25)  # Lazy response ))
+                    # await api.sleep(0.25)  # Lazy response ))
                     stream.write(data)
                 else:
                     raise ConnectionResetError("Connection reset by peer")
                 await stream.flush()
+                break
         except IOError as exc:
             logging.warning("[{}]Connection fail: {}".format(addr, exc))
         finally:
@@ -52,7 +53,7 @@ class EchoServer(TCPServer):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
 
     server = EchoServer()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077

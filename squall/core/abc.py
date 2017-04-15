@@ -1,118 +1,94 @@
-""" External interfaces
+""" Interfaces of classes `squall.core`
 """
 import sys
+from concurrent.futures import Future
 from abc import ABCMeta, abstractmethod
-
-try:
-    from typing import Coroutine, Awaitable, Callable
-except ImportError:
-    from collections.abc import Coroutine, Awaitable, Callable
-from typing import Tuple, Optional, Any
+from typing import Tuple, Union, Any
+from collections.abc import Awaitable, Callable
 
 
-class Future(metaclass=ABCMeta):
-    """ Interface of future-like objects
+class Coroutine(metaclass=ABCMeta):
+    """ Future-like coroutine with a mostly-compatible
+    `concurrent.futures.Future` what produced with call
+    `Dispatcher.submit`.
     """
 
     @abstractmethod
-    def cancel(self):
-        """ Cancel the future if possible.
-
-        See also:
-            `concurrent.futures.Future.cancel`
+    def running(self) -> bool:
+        """ Returns True if this coroutine is currently running.
         """
 
     @abstractmethod
     def cancelled(self) -> bool:
-        """ Return True if the future was cancelled.
-
-        See also:
-            `concurrent.futures.Future.cancel`
-        """
-
-    @abstractmethod
-    def running(self) -> bool:
-        """ Return True if the future is currently executing.
-
-        See also:
-            `concurrent.futures.Future.running`
+        """ Returns True if this coroutine has been cancelled.
         """
 
     @abstractmethod
     def done(self) -> bool:
-        """ Return True of the future was cancelled or finished executing.
-
-        See also:
-            `concurrent.futures.Future.done`
-        """
-
-    @abstractmethod
-    def add_done_callback(self, callback):
-        """ Attaches a callable that will be called when the future finishes.
-
-        See also:
-            `concurrent.futures.Future.add_done_callback`
+        """ Returns True if this coroutine has finished with result.
         """
 
     @abstractmethod
     def result(self) -> Any:
-        """ Return the result of the call that the future represents.
-
-        See also:
-            `concurrent.futures.Future.result`
+        """ If this coroutine has finished succeeded returns its result
+        or raises exception otherwise. If a result isn’t yet available,
+        raises NotImplementedError. Use `Dispatcher.complete` to get result
+        asynchronously.
         """
 
     @abstractmethod
-    def exception(self) -> BaseException:
-        """ Return the exception raised by the call that the future represents.
-
-        See also:
-            `concurrent.futures.Future.exception`
+    def exception(self) -> None:
+        """ If this coroutine has fail, returns exception or `None` in otherwise.
+        If a result isn’t yet available, raises NotImplementedError.
+        Use `Dispatcher.complete` to get result asynchronously.
         """
 
     @classmethod
-    def __subclasshook__(cls, C):
-        if cls is Future:
-            for name in cls.__abstractmethods__:
-                if not any(name in B.__dict__ for B in C.__mro__):
-                    return False
-            return True
-        return NotImplemented
+    @abstractmethod
+    def current(cls) -> 'Coroutine':
+        """ Return current coroutine.
+        """
+
+    @abstractmethod
+    def switch(self, value: Any):
+        """ Sends some value into coroutine to switches its running back.
+        """
+
+    @abstractmethod
+    def add_done_callback(self, callback: [['Coroutine'], None]) -> None:
+        """ Attaches the given `callback` to this coroutine.
+        """
+
+    @abstractmethod
+    def cancel(self) -> bool:
+        """ Cancel this coroutine.
+        """
 
 
 class Dispatcher(metaclass=ABCMeta):
-    """ Interface of the coroutine dispatcher/switcher
+    """ Coroutine switcher/dispatcher
     """
+
+    @abstractmethod
+    def __init__():
+        """ Constructor
+        """
 
     @property
     @abstractmethod
     def READ(self) -> int:
-        """ Event code "I/O device ready to read".
+        """ Event code I/O ready to read.
         """
 
     @property
     @abstractmethod
     def WRITE(self) -> int:
-        """ Event code "I/O device ready to write".
+        """ Event code I/O ready to write.
         """
 
     @abstractmethod
-    def submit(self, corofunc, *args, **kwargs) -> Future:
-        """ Creates and return coroutine wrapped as future-like.
-
-        Warning:
-            Do not directly call `send`, `throw`, 'close' for coroutines returned by this method.
-        """
-
-    @abstractmethod
-    def switch(self, coro: Coroutine, value) -> Tuple[Optional[Any], Optional[Exception]]:
-        """ Sends some value into coroutine to switches its running back.
-
-        Returns:
-             * (None, None) if it's continue running
-             * (Any, StopIteration) if it's finished
-             * (None, GeneratorExit) if it's closed.
-             * (None, Exception) if it's aborted by uncaught exception.
+    def submit(self, corofunc: Callable, *args, **kwargs) -> Coroutine:
+        """ Creates the coroutine and submits to execute.
         """
 
     @abstractmethod
@@ -122,7 +98,8 @@ class Dispatcher(metaclass=ABCMeta):
 
     @abstractmethod
     def stop(self):
-        """ Stops a coroutine dispatching"""
+        """ Stops a coroutine dispatching
+        """
 
     @abstractmethod
     def sleep(self, seconds: float = None) -> Awaitable:
@@ -131,7 +108,7 @@ class Dispatcher(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def ready(self, fd: int, events: int, *, timeout: float = None) -> Awaitable:
+    def ready(self, fd: int, mode: int, *, timeout: float = None) -> Awaitable:
         """ Returns the awaitable that switches current coroutine back
         when I/O device with a given `fd` ready to read and/or write.
 
@@ -146,9 +123,10 @@ class Dispatcher(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def complete(self, *futures: Tuple[Future], timeout: float = None) -> Awaitable:
+    def complete(self, *futures: Tuple[Union[Coroutine, Future]],
+                 timeout: float = None) -> Awaitable:
         """ Returns the awaitable that switches current coroutine back
-        when the given future or list of futures has done.
+        when the given future-like or list of future-like objects has done.
 
         Raises:
             TimeoutError: `timeout` is set and elapsed.
@@ -156,7 +134,7 @@ class Dispatcher(metaclass=ABCMeta):
 
 
 class IOStream(metaclass=ABCMeta):
-    """ Interface of the async I/O stream
+    """ Base async I/O stream. With used in stream hanslers.
     """
 
     @property
@@ -183,28 +161,20 @@ class IOStream(metaclass=ABCMeta):
         """
 
     @abstractmethod
+    def read_until(self, delimiter: bytes,
+                   *, max_bytes: int = None, timeout: float = None) -> Awaitable:
+        """ Returns awaitable to asynchronously read until we have found the given
+        delimiter. The result includes all the data read including the delimiter.
+
+        Raises:
+            TimeoutError: `timeout` is defined and elapsed.
+            LookupError: when delimiter not found but buffer size is equal or greater `max_bytes`.
+            IOError: occurred any I/O error.
+        """
+
+    @abstractmethod
     def read_exactly(self, num_bytes: int, *, timeout: float = None) -> Awaitable:
-        """ Asynchronously read a number of bytes.
-
-        Raises:
-            TimeoutError: `timeout` is defined and elapsed.
-            IOError: occurred any I/O error.
-        """
-
-    @abstractmethod
-    def read_until(self, delimiter: bytes, *, max_bytes: int = None, timeout: float = None) -> Awaitable:
-        """ Asynchronously read until we have found the given delimiter.
-        The result includes all the data read including the delimiter.
-
-        Raises:
-            TimeoutError: `timeout` is defined and elapsed.
-            BufferError: incomming buffer if full but delemiter not found.
-            IOError: occurred any I/O error.
-        """
-
-    @abstractmethod
-    def flush(self, *, timeout: float = None) -> Awaitable:
-        """ Asynchronously drain an outcoming buffer of this stream.
+        """ Returns awaitable to asynchronously read a number of bytes.
 
         Raises:
             TimeoutError: `timeout` is defined and elapsed.
@@ -220,7 +190,16 @@ class IOStream(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def close(self):
+    def flush(self, *, timeout: float = None) -> Awaitable:
+        """ Returns awaitable to asynchronously drain an outcoming buffer of this stream.
+
+        Raises:
+            TimeoutError: `timeout` is defined and elapsed.
+            IOError: occurred any I/O error.
+        """
+
+    @abstractmethod
+    def close(self) -> None:
         """ Closes stream and associated resources.
         """
 
@@ -232,13 +211,14 @@ else:
 
 
 class TCPServer(metaclass=ABCMeta):
-    """ Interface of the async TCP Server
+    """ Asynchronous TCP server
     """
 
     @abstractmethod
     def __init__(self, stream_handler: StreamHandler,
-                 block_size: int = 1024, buffer_size: int = 64 * 1024):
-        """ Constructor """
+                 block_size: int = 1024, buffer_size: int = 65536):
+        """ Constructor
+        """
 
     @property
     @abstractmethod
@@ -247,48 +227,29 @@ class TCPServer(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def bind(self, port: int, address: str = None, *, backlog: int = 128, reuse_port: bool = False):
+    def bind(self, port: int, address: str = None,
+             *, backlog: int = 128, reuse_port: bool = False) -> None:
         """ Binds this server to the given port on the given address.
         """
 
     @abstractmethod
-    def unbind(self, port: int, address: str = None):
+    def unbind(self, port: int, address: str = None) -> None:
         """ Unbinds this server from the given port on the given address.
         """
 
     @abstractmethod
-    def before_start(self, disp: Dispatcher):
+    def before_start(self, disp: Dispatcher) -> None:
         """ Called before starting this server.
 
         May be overridden to initialize and start other coroutines there.
         """
 
     @abstractmethod
-    def start(self, num_processes: int = 1):
+    def start(self, num_processes: int = 1) -> None:
         """ Starts this server.
         """
 
     @abstractmethod
-    def stop(self):
+    def stop(self) -> None:
         """ Stops this server.
-        """
-
-
-class TCPClient(metaclass=ABCMeta):
-    """ Interface of the async TCP Client
-    """
-
-    @abstractmethod
-    def __init__(self, disp: Dispatcher, block_size: int = 1024, buffer_size: int = 64 * 1024):
-        """ Constructor """
-
-    @abstractmethod
-    def connect(self, stream_handler: StreamHandler,
-                host: str, port: int, *, timeout: float = None) -> Awaitable:
-        """ Asynchronously connects to the given `host`:`port` if success create stream
-        and process client connection into `stream_handler`.
-
-        Raises:
-            TimeoutError: `timeout` is defined and elapsed.
-            IOError: occurred any I/O error.
         """
