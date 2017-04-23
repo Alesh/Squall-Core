@@ -9,7 +9,7 @@ from collections.abc import Coroutine as AbcCoroutine
 
 
 try:
-    from squall.core_cython import EventLoop
+    from squall.core_callback import EventLoop
 except ImportError:
     from squall.core_fallback import EventLoop
 

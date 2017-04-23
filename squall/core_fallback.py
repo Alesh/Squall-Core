@@ -171,7 +171,7 @@ class AutoBuffer(metaclass=ABCMeta):
         return self._buffer_size
 
     def _event_handler(self, revents):
-        last_error = None
+        last_error = errno.EIO if revents & self.ERROR else None
         mode = self._mode
 
         if revents & (self.READ | self.WRITE) == revents:
@@ -284,12 +284,14 @@ class AutoBuffer(metaclass=ABCMeta):
         return False
 
     def read(self, max_bytes):
-        """ See for detail `AbcAutoBuffer.read` """
+        """ Read bytes from incoming buffer how much is there, but not more max_bytes. """
         result, self._in = self._in[:max_bytes], self._in[max_bytes:]
         return result
 
     def write(self, data):
-        """ See for detail `AbcAutoBuffer.write` """
+        """ Writes data to the outcoming buffer.
+        Returns number of bytes what has been written.
+        """
         block = b''
         if self.active:
             block = data[:self._buffer_size - len(self._out)]
@@ -301,7 +303,8 @@ class AutoBuffer(metaclass=ABCMeta):
 
     @abstractmethod
     def close(self):
-        """ See for detail `AbcAutoBuffer.close` """
+        """ Closes this and associated resources.
+        """
         self.cancel_task()
         self._loop.cancel_io(self._handle)
         self._handle = None

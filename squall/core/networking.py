@@ -9,7 +9,7 @@ from squall.core.switching import Dispatcher, _Awaitable
 from squall.core.iostream import IOStream
 
 try:
-    from squall.core_cython import SocketAutoBuffer
+    from squall.core_callback import SocketAutoBuffer
 except ImportError:
     from squall.core_fallback import SocketAutoBuffer  # noqa
 
