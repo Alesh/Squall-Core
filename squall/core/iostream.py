@@ -17,7 +17,7 @@ class IOStream(object):
     def active(self):
         """ Returns `True` if this stream is active (not closed).
         """
-        return self._auto_buff.active
+        return self._auto_buff.is_active
 
     @property
     def block_size(self):
@@ -169,7 +169,7 @@ class _ReadExactlyAwaitable(_Awaitable):
     def setup(self, num_bytes, timeout):
         if timeout < 0:
             return TimeoutError("I/O timeout"),
-        result, payload = self._auto_buff.setup_read_number(self._on_event, num_bytes)
+        result, payload = self._auto_buff.setup_read_exactly(self._on_event, num_bytes)
         if result:
             if result == self._auto_buff.READ:
                 return payload,

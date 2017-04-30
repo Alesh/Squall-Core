@@ -1,8 +1,9 @@
 .eggs/
 .cache/
 build/
+dist/
 *.egg-info/
 *.so
-*.c
+*.cpp
 __pycache__
 ~*

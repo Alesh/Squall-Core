@@ -140,8 +140,7 @@ class AutoBuffer(metaclass=ABCMeta):
         self._buffer_size = buffer_size
         self._handle = self._loop.setup_io(self._event_handler, fd, self._mode)
 
-    @property
-    def active(self):
+    def is_active(self):
         """ Returns `True` if this is active (not closed). """
         return self._handle is not None
 
@@ -210,7 +209,7 @@ class AutoBuffer(metaclass=ABCMeta):
                 self.cancel_task()
                 callback(result, payload)
 
-        if self.active:
+        if self.is_active():
             # recalc I/O mode
             if not (mode & self.READ):
                 if len(self._in) < self._buffer_size:
@@ -233,7 +232,7 @@ class AutoBuffer(metaclass=ABCMeta):
         """
 
     def _read_until_task(self, delimiter, max_bytes):
-        if self.active:
+        if self.is_active():
             pos = self._in.find(delimiter)
             if (pos >= 0):
                 return self.READ, self.read(pos + len(delimiter))
@@ -244,27 +243,29 @@ class AutoBuffer(metaclass=ABCMeta):
             return self.ERROR, None
 
     def setup_read_until(self, callback, delimiter, max_bytes):
+        """ Sets up buffer to reading until delimiter. """
         result, payload = self._read_until_task(delimiter, max_bytes)
         if not result:
             self._task = callback, self.READ, self._read_until_task, delimiter, max_bytes
         return result, payload
 
-    def _read_number_task(self, num_bytes):
-        if self.active:
+    def _read_exactly_task(self, num_bytes):
+        if self.is_active():
             if len(self._in) >= num_bytes:
                 return self.READ, self.read(num_bytes)
             return 0, None
         else:
             return self.ERROR, None
 
-    def setup_read_number(self, callback, num_bytes):
-        result, payload = self._read_number_task(num_bytes)
+    def setup_read_exactly(self, callback, num_bytes):
+        """ Sets up buffer to reading exactly number of bytes. """
+        result, payload = self._read_exactly_task(num_bytes)
         if not result:
-            self._task = callback, self.READ, self._read_number_task, num_bytes
+            self._task = callback, self.READ, self._read_exactly_task, num_bytes
         return result, payload
 
     def _flush_task(self):
-        if self.active:
+        if self.is_active():
             if len(self._out) == 0:
                 return self.WRITE, True
             return 0, None
@@ -272,12 +273,14 @@ class AutoBuffer(metaclass=ABCMeta):
             return self.ERROR, None
 
     def setup_flush(self, callback):
+        """ Sets up buffer to flush outgoing buffer. """
         result, payload = self._flush_task()
         if not result:
             self._task = callback, self.WRITE, self._flush_task
         return result, payload
 
     def cancel_task(self):
+        """ Cancels previos setup task. """
         if self._task is not None:
             self._task = None
             return True
@@ -293,7 +296,7 @@ class AutoBuffer(metaclass=ABCMeta):
         Returns number of bytes what has been written.
         """
         block = b''
-        if self.active:
+        if self.is_active():
             block = data[:self._buffer_size - len(self._out)]
             self._out += block
             if not (self._mode & self.WRITE):
@@ -302,12 +305,14 @@ class AutoBuffer(metaclass=ABCMeta):
         return len(block)
 
     @abstractmethod
-    def close(self):
-        """ Closes this and associated resources.
+    def cleanup(self):
+        """ Stops and cleanups buffer.
         """
         self.cancel_task()
         self._loop.cancel_io(self._handle)
         self._handle = None
+        self._out = b''
+        self._in = b''
 
 
 class SocketAutoBuffer(AutoBuffer):
