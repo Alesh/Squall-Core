@@ -1,28 +1,27 @@
 """ Sample "Hello world"
 """
 from signal import SIGINT
+from squall.core import Dispatcher
 
-from squall.core import Dispatcher as API
 
-
-async def hello(api, name, *, timeout=None):
+async def hello(disp, name, *, timeout=None):
     try:
         while True:
-            await api.sleep(timeout)
+            await disp.sleep(timeout)
             print("Hello, {}!".format(name))
     finally:
         print("Bye, {}!".format(name))
 
 
-async def terminator(api):
-    await api.signal(SIGINT)
+async def terminator(disp):
+    await disp.signal(SIGINT)
     print("Got SIGINT!")
-    api.stop()
+    disp.stop()
 
 
 if __name__ == '__main__':
-    api = API()
-    api.submit(hello, "World", timeout=1.0)
-    api.submit(hello, "Alesh", timeout=2.5)
-    api.submit(terminator)
-    api.start()
+    disp = Dispatcher()
+    disp.submit(hello, "World", timeout=1.0)
+    disp.submit(hello, "Alesh", timeout=2.5)
+    disp.submit(terminator)
+    disp.start()

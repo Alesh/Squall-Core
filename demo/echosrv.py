@@ -4,8 +4,8 @@ import logging
 import sys
 from signal import SIGINT
 
-from squall.core.networking import TCPServer, Addr
-from squall.core.switching import timeout_gen
+from squall.core.network import TCPServer
+from squall.core.utils import Addr, timeout_gen
 
 
 class EchoServer(TCPServer):
@@ -19,41 +19,41 @@ class EchoServer(TCPServer):
     def unbind(self, port, address=None):
         addr = Addr((address, port))
         super().unbind(port, address)
-        logging.info("[{}]Finished echo listener".format(addr))
+        logging.info("[%s]Finished echo listener", addr)
 
     def bind(self, port, address=None, *, backlog=128, reuse_port=False):
         addr = Addr((address, port))
         super().bind(port, address, backlog=backlog, reuse_port=reuse_port)
-        logging.info("[{}]Established echo listener".format(addr))
+        logging.info("[%s]Established echo listener", addr)
 
-    async def echo_handler(self, api, stream, addr):
-        logging.info("[{}]Accepted connection".format(addr))
+    async def echo_handler(self, disp, stream, addr):
+        addr = Addr(addr)
+        logging.info("[%s]Accepted connection", addr)
         try:
             while stream.active:
                 timeout = timeout_gen(self._timeout)
                 data = await stream.read_until(b'\r\n\r\n', timeout=next(timeout))
                 if data:
-                    # await api.sleep(0.25)  # Lazy response ))
+                    await disp.sleep(0.25)  # Lazy response ))
                     stream.write(data)
                 else:
                     raise ConnectionResetError("Connection reset by peer")
                 await stream.flush()
-                break
         except IOError as exc:
-            logging.warning("[{}]Connection fail: {}".format(addr, exc))
+            logging.warning("[%s]Connection fail: %s", addr, exc)
         finally:
-            logging.info("[{}]Connection has closed".format(addr))
+            logging.info("[%s]Connection has closed", addr)
 
-    def before_start(self, api):
-        async def terminator(api):
-            await api.signal(SIGINT)
+    def before_start(self, disp):
+        async def terminator(disp):
+            await disp.signal(SIGINT)
             self.stop()
 
-        api.submit(terminator)
+        disp.submit(terminator)
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
 
     server = EchoServer()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 22077

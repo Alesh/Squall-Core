@@ -1,11 +1,11 @@
 import pytest
-from time import time
-from squall.core import TCPServer
-from squall.core.switching import _Awaitable, timeout_gen
-
 import socket
+from time import time
 from functools import partial
-from squall.core.networking import _SocketStream
+from squall.core import TCPServer, SocketStream
+from squall.core.switching import Awaitable
+from squall.core.utils import timeout_gen
+
 
 
 class TCPClient(object):
@@ -21,7 +21,7 @@ class TCPClient(object):
         return self._ConnectAwaitable(self._disp, stream_handler,
                                       host, port, timeout, *self._stream_params)
 
-    class _ConnectAwaitable(_Awaitable):
+    class _ConnectAwaitable(Awaitable):
         """ Awaitable for `TCPClient.connect` """
 
         def __init__(self, disp, stream_handler, host, port, timeout, block_size, buffer_size):
@@ -59,7 +59,7 @@ class TCPClient(object):
                     socket_.close()
                 self._callback(ConnectionError("Cannon connect"))
             else:
-                stream = _SocketStream(self._disp, socket_, self._block_size, self._buffer_size)
+                stream = SocketStream(self._disp, socket_, self._block_size, self._buffer_size)
                 future = self._disp.submit(self._stream_handler, stream, self._address)
 
                 if future.done():

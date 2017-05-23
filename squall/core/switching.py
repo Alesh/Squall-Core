@@ -1,184 +1,176 @@
-""" Coroutine switching
+""" Event-driven coroutine switching/dispatching
 """
 import logging
-import threading
-from time import time
 from collections import deque
 from concurrent.futures import CancelledError, Future
-from collections.abc import Coroutine as AbcCoroutine
+from squall.core_callback import EventLoop
 
 
-try:
-    from squall.core_callback import EventLoop
-except ImportError:
-    from squall.core_fallback import EventLoop
-
-_TLS = threading.local()
+class PartialFuture(NotImplementedError):
+    def __init__(self):
+        super().__init__("This is partial future-like implementation, "
+                         "Use method `Dispatcher.complete` for take result")
 
 
-class _Coroutine(object):
-    """ Future-like coroutine implementation
-    with a mostly-compatible `concurrent.futures.Future`.
+class CannotSetupDispatcher(RuntimeError):
+    def __init__(self, msg=None):
+        super().__init__(msg or "Set up a dispatcher to event watching has fail")
+
+
+class AsyncLet(object):
+    """ Future-like wrapper that help to manage coroutines into a Squall environment.
     """
+    _stack = deque()
+
     def __init__(self, corofunc, disp, *args, **kwargs):
-        self.__result = None
-        self.__running = True
-        self.__exception = None
-        self.__cancelled = False
-        self.__done_callbacks = list()
-        self.__coro = corofunc(disp, *args, **kwargs)
-        assert isinstance(self.__coro, AbcCoroutine)
-        self.switch(None)  # Start coroutine
+        self._running = True
+        self._cancelled = False
+        self._done_callbacks = list()
+        self._result = self._exception = None
+        self._coro = corofunc(disp, *args, **kwargs)
+        self.switch(None)  # start coroutine
 
     def __repr__(self):
-        cls_name = self.__class__.__name__
-        state = 'running' if self.running() else 'cancelled' if self.cancelled() else 'finished'
-        if self.done():
-            if self.__exception:
-                return ('<{} at {:#x} state={} raised {}>'
-                        ''.format(cls_name, id(self), state, self.__exception.__class__.__name__))
-            return ('<{} at {:#x} state={} returned {}>'
-                    ''.format(cls_name, id(self), state, self.__result.__class__.__name__))
-        return '<{} at {:#x} state={}>'.format(cls_name, id(self), state)
-
-    def running(self):
-        """ Returns True if this coroutine is currently running.
-        """
-        return self.__running and not self.__cancelled
-
-    def cancelled(self):
-        """ Returns True if this coroutine has been cancelled.
-        """
-        return self.__cancelled
-
-    def done(self):
-        """ Returns True if this coroutine has finished with result.
-        """
-        return self.__cancelled or (not self.__running)
-
-    class NotFullyImplemented(NotImplementedError):
-        def __init__(self):
-            super().__init__("Use method `Dispatcher.complete` for take "
-                             "a result of uncompleted future-like coroutine")
-
-    def result(self, timeout=None):
-        """ If this coroutine has finished succeeded returns its result
-         or raises exception otherwise.
-        """
-        if self.cancelled():
-            raise CancelledError()
-        if self.running():
-            self.cancel()
-            raise self.NotFullyImplemented()
-        if self.__exception is not None:
-            raise self.__exception
-        return self.__result
-
-    def exception(self, timeout=None):
-        """ If this coroutine fail, returns exception or `None`.
-        """
-        if self.cancelled():
-            raise CancelledError()
-        if self.running():
-            self.cancel()
-            raise self.NotFullyImplemented()
-        return self.__exception
-
-    @classmethod
-    def current(cls):
-        """ Return current coroutine.
-        """
-        coro_stack = _TLS.__dict__.setdefault('coro_stack', deque())
-        return coro_stack[0] if len(coro_stack) else None
-
-    def switch(self, value):
-        """ Sends some value into coroutine to switches its running back.
-        """
-        coro_stack = _TLS.__dict__.setdefault('coro_stack', deque())
-        try:
-            coro_stack.appendleft(self)
-            if isinstance(value, BaseException):
-                self.__coro.throw(value)
-            else:
-                self.__coro.send(value)
-        except BaseException as exc:
-            self.__running = False
-            if isinstance(exc, StopIteration):
-                self.__result = exc.value
-            else:
-                if isinstance(exc, GeneratorExit):
-                    self.__cancelled = True
-                else:
-                    self.__exception = exc
-                    logging.exception("Uncaught exception when switch({}, {})"
-                                      "".format(self.__coro, value))
-            self._invoke_callbacks()
-        finally:
-            coro_stack.popleft()
-
-    def add_done_callback(self, callback):
-        """ Attaches the given `callback` to this coroutine.
-        """
-        self.__done_callbacks.append(callback)
-
-    def cancel(self):
-        """ Cancel this coroutine.
-        """
-        if not self.done():
-            self.switch(GeneratorExit())
-        return self.__cancelled
+        msg = '<{} at {:#x} state={{}}>'.format(self.__class__.__name__, id(self))
+        if self._running:
+            return msg.format('running')
+        if self._cancelled:
+            return msg.format('cancelled')
+        msg = msg.format('finished and {} {}')
+        if self._exception:
+            return msg.format('raised', self._exception)
+        return msg.format('returned', self._result)
 
     def _invoke_callbacks(self):
-        for callback in self.__done_callbacks:
+        for callback in self._done_callbacks:
             try:
                 callback(self)
             except Exception:
-                logging.exception('Exception when calling callback for %r', self)
+                logging.exception("Exception when calling done callback for %s", self)
+
+    def running(self):
+        """ Returns True if wrapped coroutine is currently running. """
+        return self._running
+
+    def cancelled(self):
+        """ Returns True if wrapped coroutine has been cancelled. """
+        return self._cancelled
+
+    def done(self):
+        """ Returns True if wrapped coroutine has finished with result. """
+        return not self._cancelled and not self._running
+
+    @classmethod
+    def current(cls):
+        """ Return current running `AsyncLet` instance. """
+        return cls._stack[0] if cls._stack else None
+
+    def switch(self, value):
+        """ Sends some value into wrapped coroutine to switches its running back.
+        """
+        try:
+            AsyncLet._stack.appendleft(self)
+            if isinstance(value, BaseException):
+                self._coro.throw(value)
+            else:
+                self._coro.send(value)
+        except BaseException as exc:
+            self._running = False
+            if isinstance(exc, StopIteration):
+                self._result = exc.value
+            else:
+                if isinstance(exc, GeneratorExit):
+                    self._cancelled = True
+                else:
+                    self._exception = exc
+                    logging.exception("Uncaught exception when switch(%s, %s)", self._coro, value)
+            self._invoke_callbacks()
+        finally:
+            AsyncLet._stack.popleft()
+
+    def result(self, timeout=None):
+        """ If wrapped coroutine has finished succeeded
+        returns its result or raises exception otherwise.
+        """
+        if self._cancelled:
+            raise CancelledError()
+        if self._running:
+            self.cancel()
+            raise PartialFuture()
+        if self._exception is not None:
+            raise self._exception
+        return self._result
+
+    def exception(self, timeout=None):
+        """ If wrapped coroutine fail, returns exception or `None`.
+        """
+        if self._cancelled:
+            raise CancelledError()
+        if self._running:
+            self.cancel()
+            raise PartialFuture()
+        return self._exception
+
+    def cancel(self):
+        """ Cancel wrapped coroutine.
+        """
+        if not self.done():
+            self.switch(GeneratorExit())
+        return self._cancelled
+
+    def add_done_callback(self, callback):
+        """ Attaches the given `callback` to this as done callback.
+        """
+        self._done_callbacks.append(callback)
 
 
-class _Awaitable(AbcCoroutine):
-    """ Base class for `awaitable` implementation.
+class Awaitable(object):
+    """ Specialized base class for awaitable objects to using into a Squall environment.
     """
     def __init__(self, *args):
         self._args = args
-        self._callback = _Coroutine.current().switch
-
-    def setup(self, *args):
-        """ Called to setup event watching """
-
-    def cancel(self, *args):
-        """ Called to cancel event watching """
-
-    def __next__(self):
-        early_value, *args = self.setup(*self._args)
-        self._args = args
-        if early_value is not None:
-            if isinstance(early_value, BaseException):
-                raise early_value
-            else:
-                raise StopIteration(early_value)
+        self._callback = AsyncLet.current().switch
 
     def __await__(self):
+        """ Makes it awaitable. """
         return self
 
+    def __next__(self):
+        """ Prepared this awaitable to going awaiting mode. """
+        early_event, *args = self._setup(*self._args)
+        self._args = args
+        if early_event is not None:
+            self._cancel(*self._args)
+            # event already occurred, no need awaiting
+            if isinstance(early_event, BaseException):
+                raise early_event
+            else:
+                raise StopIteration(early_event)
+
+    def _setup(self, *args):
+        """ Called to setup an event watching for this awaitable.
+
+        Returns:
+            early_event: event if it already occurred, otherwise `None`.
+            *args: Possible parameters for calling `self._cancel`.
+        """
+    def _cancel(self, *args):
+        """ Called to cancel an event watching for this awaitable. """
+
     def send(self, value):
-        """ Called when awaitable received to set result. """
+        """ Called when awaitable received result to set. """
         self.throw(StopIteration(value))
 
-    def throw(self, typ, val=None, tb=None):
-        """ Called when awaitable received to raise exception. """
-        self.cancel(*self._args)
-        super().throw(typ, val, tb)
-
-
-class EventLoopError(IOError):
-    def __init__(self, msg=None):
-        super().__init__(msg or "Event loop error")
-
-
-class CannotSetupWatching(RuntimeError):
-    def __init__(self, msg=None):
-        super().__init__(msg or "Cannot setup event watching")
+    def throw(self, *exc_info):
+        """ Called when awaitable received exception to raise. """
+        self._cancel(*self._args)
+        if len(exc_info) == 1:
+            raise exc_info[0]
+        else:
+            exc = exc_info[1]
+            if len(exc_info) == 3:
+                exc = exc.with_traceback(exc_info[2])
+        raise exc
 
 
 class Dispatcher(object):
@@ -189,25 +181,25 @@ class Dispatcher(object):
         self._loop = EventLoop()
 
     @property
+    def _event_loop(self):
+        return self._loop
+
+    @property
     def READ(self):
-        """ Event code I/O ready to read.
-        """
+        """ Event code I/O ready to read. """
         return self._loop.READ
 
     @property
     def WRITE(self):
-        """ Event code I/O ready to write.
-        """
+        """ Event code I/O ready to write. """
         return self._loop.WRITE
 
     def submit(self, corofunc, *args, **kwargs):
-        """ Creates the coroutine and submits to execute.
-        """
-        return _Coroutine(corofunc, self, *args, **kwargs)
+        """ Creates the wrapped coroutine and submits to execute. """
+        return AsyncLet(corofunc, self, *args, **kwargs)
 
     def start(self):
-        """ Starts the coroutine dispatching.
-        """
+        """ Starts the coroutine dispatching. """
         return self._loop.start()
 
     def stop(self):
@@ -218,10 +210,13 @@ class Dispatcher(object):
     def sleep(self, seconds=None):
         """ Returns the awaitable that switches current coroutine back
         after `seconds` or at next loop if `seconds` is `None`.
+
+        Raises:
+            IOError: if failed event loop
         """
         seconds = seconds or 0
-        assert isinstance(seconds, (int, float))
         seconds = seconds if seconds > 0 else 0
+        assert isinstance(seconds, (int, float))
         return _SleepAwaitable(self._loop, seconds)
 
     def ready(self, fd, events, *, timeout=None):
@@ -229,19 +224,22 @@ class Dispatcher(object):
         when I/O device with a given `fd` ready to read and/or write.
 
         Raises:
+            IOError: if failed event loop
             TimeoutError: if `timeout` is set and elapsed.
         """
         timeout = timeout or 0
-        assert isinstance(timeout, (int, float))
-        assert isinstance(events, int) and events > 0
-        assert events & (self.READ | self.WRITE) == events
-        assert isinstance(fd, int) and fd >= 0
         timeout = timeout if timeout >= 0 else -1
+        assert isinstance(timeout, (int, float))
+        assert isinstance(events, int) and (events & (self.READ | self.WRITE) == events)
+        assert isinstance(fd, int) and fd >= 0
         return _ReadyAwaitable(self._loop, fd, events, timeout)
 
     def signal(self, signum):
         """ Returns the awaitable that switches current coroutine back
         when received the system signal with a given `signum`.
+
+        Raises:
+            IOError: if failed event loop
         """
         signum = signum or 0
         assert isinstance(signum, int) and signum > 0
@@ -252,160 +250,116 @@ class Dispatcher(object):
         when the given future-like or list of future-like objects has done.
 
         Raises:
+            IOError: if failed event loop
             TimeoutError: `timeout` is set and elapsed.
         """
         timeout = timeout or 0
-        assert len(futures) > 0
-        assert isinstance(timeout, (int, float))
         timeout = timeout if timeout >= 0 else -1
-        assert all(isinstance(item, (_Coroutine, Future)) for item in futures)
-        return _СompleteAwaitable(self._loop, futures, timeout)
+        assert isinstance(timeout, (int, float))
+        assert len(futures) > 0
+        assert all(isinstance(item, (AsyncLet, Future)) for item in futures)
+        return _CompleteAwaitable(self._loop, futures, timeout)
 
 
-class _SleepAwaitable(_Awaitable):
-    """ Creates and returns awaitable for `Dispatcher.sleep`
+class _SleepAwaitable(Awaitable):
+    """ Awaitable that returns `Dispatcher.sleep`
     """
+
     def __init__(self, loop, seconds):
         self._loop = loop
         super().__init__(seconds)
 
-    def _on_event(self, revents):
-        if revents == self._loop.TIMEOUT:
-            self._callback(True)
-        else:
-            self._callback(EventLoopError())
+    def _setup(self, seconds):
+        timeout_handle = self._loop.setup_timer(self._callback, seconds)
+        if timeout_handle is None:
+            return CannotSetupDispatcher(),
+        return None, timeout_handle
 
-    def setup(self, seconds):
-        handle = self._loop.setup_timer(self._on_event, seconds)
-        if handle is None:
-            return CannotSetupWatching(),
-        return None, handle
+    def _cancel(self, timeout_handle=None):
+        if timeout_handle is not None:
+            self._loop.cancel_timer(timeout_handle)
 
-    def cancel(self, handle):
-        self._loop.cancel_timer(handle)
+    def throw(self, exc, *args):
+        if isinstance(exc, TimeoutError):
+            # exception `TimeoutError` has got as an event message is normal for this awaitable
+            raise StopIteration(True)
+        super().throw(exc, *args)
 
 
-class _ReadyAwaitable(_Awaitable):
-    """ Creates and returns awaitable for `Dispatcher.ready`
+class _ReadyAwaitable(Awaitable):
+    """ Awaitable that returns `Dispatcher.sleep`
     """
+
     def __init__(self, loop, fd, events, timeout):
         self._loop = loop
         super().__init__(fd, events, timeout)
 
-    def _on_event(self, revents):
-        if revents & (self._loop.READ | self._loop.WRITE) == revents:
-            self._callback(revents)
-        elif revents == self._loop.TIMEOUT:
-            self._callback(TimeoutError("I/O timeout"))
-        else:
-            self._callback(EventLoopError())
-
-    def setup(self, fd, events, timeout):
+    def _setup(self, fd, events, timeout):
+        timeout_handle = None
         if timeout < 0:
             return TimeoutError("I/O timeout"),
-        timeout_handle = None
-        ready_handle = self._loop.setup_io(self._on_event, fd, events)
-        if ready_handle is not None:
-            if timeout > 0:
-                timeout_handle = self._loop.setup_timer(self._on_event, timeout)
-                if timeout_handle is None:
-                    self._loop.cancel_io(ready_handle)
-                    return CannotSetupWatching(),
-            return None, ready_handle, timeout_handle
-        return CannotSetupWatching(),
+        elif timeout > 0:
+            timeout_handle = self._loop.setup_timer(self._callback, timeout)
+            if timeout_handle is None:
+                return CannotSetupDispatcher(),
+        ready_handle = self._loop.setup_io(self._callback, fd, events)
+        if ready_handle is None:
+            return CannotSetupDispatcher(), None, timeout_handle
+        return None, ready_handle, timeout_handle
 
-    def cancel(self, ready_handle, timeout_handle):
-        self._loop.cancel_io(ready_handle)
+    def _cancel(self, ready_handle=None, timeout_handle=None):
+        if ready_handle is not None:
+            self._loop.cancel_io(ready_handle)
         if timeout_handle is not None:
             self._loop.cancel_timer(timeout_handle)
 
 
-class _SignalAwaitable(_Awaitable):
-    """ Creates and returns awaitable for `Dispatcher.signal`
+class _SignalAwaitable(Awaitable):
+    """ Awaitable that returns `Dispatcher.signal`
     """
+
     def __init__(self, loop, signum):
         self._loop = loop
         super().__init__(signum)
 
-    def _on_event(self, revents):
-        if revents == self._loop.SIGNAL:
-            self._callback(True)
-        else:
-            self._callback(EventLoopError())
+    def _setup(self, signum):
+        signal_handle = self._loop.setup_signal(self._callback, signum)
+        if signal_handle is None:
+            return CannotSetupDispatcher(),
+        return None, signal_handle
 
-    def setup(self, signum):
-        handle = self._loop.setup_signal(self._on_event, signum)
-        if handle is None:
-            return CannotSetupWatching(),
-        return None, handle
-
-    def cancel(self, handle):
-        self._loop.cancel_signal(handle)
+    def _cancel(self, signal_handle=None):
+        if signal_handle is not None:
+            self._loop.cancel_signal(signal_handle)
 
 
-class _СompleteAwaitable(_Awaitable):
-    """ Creates and returns awaitable for `Dispatcher.complete`
+class _CompleteAwaitable(Awaitable):
+    """ Awaitable that returns `Dispatcher.complete`
     """
+
     def __init__(self, loop, futures, timeout):
         self._loop = loop
         self._futures = futures
         super().__init__(timeout)
 
-    def _on_event(self, revents):
-        if isinstance(revents, tuple):
-            self._callback(revents)
-        else:
-            self._cancel_all()
-            if revents == self._loop.TIMEOUT:
-                self._callback(TimeoutError("I/O timeout"))
-            else:
-                self._callback(EventLoopError())
+    def _one_complete(self, _):
+        if all(future.done() or future.cancelled() for future in self._futures):
+            self._callback(tuple(future for future in self._futures))
 
-    def _done_callback(self, future):
-        if all(future.done() for future in self._futures):
-            self._on_event(tuple(future for future in self._futures))
-
-    def _cancel_all(self):
-        for future in self._futures:
-            future.cancel()
-
-    def setup(self, timeout):
+    def _setup(self, timeout):
+        timeout_handle = None
         if timeout < 0:
             return TimeoutError("I/O timeout"),
-
-        timeout_handle = None
-        if timeout > 0:
-            timeout_handle = self._loop.setup_timer(self._on_event, timeout)
+        elif timeout > 0:
+            timeout_handle = self._loop.setup_timer(self._callback, timeout)
             if timeout_handle is None:
-                return CannotSetupWatching(),
+                return CannotSetupDispatcher(),
         for future in self._futures:
-            future.add_done_callback(self._done_callback)
+            future.add_done_callback(self._one_complete)
         return None, timeout_handle
 
-    def cancel(self, timeout_handle):
+    def _cancel(self, timeout_handle=None):
         if timeout_handle is not None:
             self._loop.cancel_timer(timeout_handle)
-        self._cancel_all()
-
-
-# Utilites
-
-
-class timeout_gen(object):
-    """ Timeout generator
-    """
-
-    def __init__(self, initial_timeout):
-        assert (isinstance(initial_timeout, (int, float)) or
-                initial_timeout is None)
-        self.deadline = None
-        if initial_timeout is not None:
-            self.deadline = time() + initial_timeout
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.deadline is not None:
-            value = self.deadline - time()
-            return value if value > 0 else -1
+        for future in self._futures:
+            future.cancel()

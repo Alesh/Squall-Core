@@ -101,7 +101,7 @@ def test_CoroutineB(callog, fifo_files):
         ('A', 2), ('A', 2), ('A', 2), ('A', 2),
         ('A', 'end'),
         ('B', True),
-        ('B', False)
+        ('B', False),
     ]
 
 
@@ -332,11 +332,7 @@ def test_both_future(callog, executor):
     api.start()
 
     print(callog)
-    assert callog == ['<<', '*', '<FT', '*', '*', '*',  ('DONE!A', 'DONE!R'), 'FT>', '*', '>>']
-
-
+    assert callog == ['<<', '*', '<FT', '*', '*', '*', ('DONE!A', 'DONE!R'), 'FT>', '*', '>>']
 
 if __name__ == '__main__':
-
     pytest.main([__file__])
-
