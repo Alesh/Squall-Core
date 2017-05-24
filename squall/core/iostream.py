@@ -10,7 +10,8 @@ class IOStream(object):
     """ Base async I/O stream
     """
 
-    def __init__(self, event_buffer):
+    def __init__(self, disp, event_buffer):
+        self._disp = disp
         self._buff = event_buffer
         self._is_closed = False
 
@@ -71,7 +72,7 @@ class IOStream(object):
         assert isinstance(timeout, (int, float))
         assert isinstance(delimiter, bytes) and delimiter
         assert isinstance(max_bytes, int) and max_bytes >= 0
-        return _ReadUntilAwaitable(self._buff, delimiter, max_bytes, timeout)
+        return _ReadUntilAwaitable(self._disp, self._buff, delimiter, max_bytes, timeout)
 
     def read_exactly(self, num_bytes, *, timeout=None):
         """ Returns awaitable to asynchronously read a number of bytes.
@@ -85,7 +86,7 @@ class IOStream(object):
         timeout = timeout if timeout >= 0 else -1
         assert isinstance(num_bytes, int) and num_bytes > 0
         assert isinstance(timeout, (int, float))
-        return _ReadExactlyAwaitable(self._buff, num_bytes, timeout)
+        return _ReadExactlyAwaitable(self._disp, self._buff, num_bytes, timeout)
 
     def write(self, data):
         """ Writes data to the outcoming buffer of this stream.
@@ -105,7 +106,7 @@ class IOStream(object):
         timeout = timeout or 0
         timeout = timeout if timeout >= 0 else -1
         assert isinstance(timeout, (int, float))
-        return _FlushAwaitable(self._buff, timeout)
+        return _FlushAwaitable(self._disp, self._buff, timeout)
 
     def close(self):
         """ Closes stream and associated resources.
@@ -118,16 +119,16 @@ class _ReadUntilAwaitable(Awaitable):
     """ Awaitable that returns `IOStream.read_until`
     """
 
-    def __init__(self, buff, delimiter, max_bytes, timeout):
+    def __init__(self, disp, buff, delimiter, max_bytes, timeout):
         self._buff = buff
-        super().__init__(delimiter, max_bytes, timeout)
+        super().__init__(disp, delimiter, max_bytes, timeout)
 
     def _setup(self, delimiter, max_bytes, timeout):
         timeout_handle = None
         if timeout < 0:
             return TimeoutError("I/O timeout"),
         elif timeout > 0:
-            timeout_handle = self._buff.event_loop.setup_timer(self._callback, timeout)
+            timeout_handle = self._loop.setup_timer(self._callback, timeout)
             if timeout_handle is None:
                 return CannotSetupDispatcher(),
         early, result = self._buff.setup_read_until(self._callback, delimiter, max_bytes)
@@ -139,7 +140,7 @@ class _ReadUntilAwaitable(Awaitable):
 
     def _cancel(self, timeout_handle=None):
         if timeout_handle is not None:
-            self._buff.event_loop.cancel_timer(timeout_handle)
+            self._loop.cancel_timer(timeout_handle)
         self._buff.cancel(self._buff.READ)
 
 
@@ -147,16 +148,16 @@ class _ReadExactlyAwaitable(Awaitable):
     """ Awaitable that returns `IOStream.read_exactly`
     """
 
-    def __init__(self, buff, num_bytes, timeout):
+    def __init__(self, disp, buff, num_bytes, timeout):
         self._buff = buff
-        super().__init__(num_bytes, timeout)
+        super().__init__(disp, num_bytes, timeout)
 
     def _setup(self, num_bytes, timeout):
         timeout_handle = None
         if timeout < 0:
             return TimeoutError("I/O timeout"),
         elif timeout > 0:
-            timeout_handle = self._buff.event_loop.setup_timer(self._callback, timeout)
+            timeout_handle = self._loop.setup_timer(self._callback, timeout)
             if timeout_handle is None:
                 return CannotSetupDispatcher(),
         early, result = self._buff.setup_read_exactly(self._callback, num_bytes)
@@ -168,7 +169,7 @@ class _ReadExactlyAwaitable(Awaitable):
 
     def _cancel(self, timeout_handle=None):
         if timeout_handle is not None:
-            self._buff.event_loop.cancel_timer(timeout_handle)
+            self._loop.cancel_timer(timeout_handle)
         self._buff.cancel(self._buff.READ)
 
 
@@ -176,16 +177,16 @@ class _FlushAwaitable(Awaitable):
     """ Awaitable that returns `IOStream.flush`
     """
 
-    def __init__(self, buff, timeout):
+    def __init__(self, disp, buff, timeout):
         self._buff = buff
-        super().__init__(timeout)
+        super().__init__(disp, timeout)
 
     def _setup(self, timeout):
         timeout_handle = None
         if timeout < 0:
             return TimeoutError("I/O timeout"),
         elif timeout > 0:
-            timeout_handle = self._buff.event_loop.setup_timer(self._callback, timeout)
+            timeout_handle = self._loop.setup_timer(self._callback, timeout)
             if timeout_handle is None:
                 return CannotSetupDispatcher(),
         early, result = self._buff.setup_flush(self._callback)
@@ -197,7 +198,7 @@ class _FlushAwaitable(Awaitable):
 
     def _cancel(self, timeout_handle=None):
         if timeout_handle is not None:
-            self._buff.event_loop.cancel_timer(timeout_handle)
+            self._loop.cancel_timer(timeout_handle)
         self._buff.cancel(self._buff.WRITE)
 
 
@@ -207,7 +208,7 @@ class SocketStream(IOStream):
 
     def __init__(self, disp, socket_, block_size, buffer_size):
         self._socket = socket_
-        super().__init__(SocketBuffer(disp._event_loop, socket_, block_size, buffer_size))
+        super().__init__(disp, SocketBuffer(disp._loop, socket_, block_size, buffer_size))
 
     def close(self):
         """ Closes stream and associated resources.
@@ -227,7 +228,7 @@ class FileStream(IOStream):
 
     def __init__(self, disp, path, flags, *, mode=0o777, block_size=0, buffer_size=0):
         self._fd = os.open(path, flags | os.O_NONBLOCK, mode)
-        super().__init__(FileBuffer(disp._event_loop, self._fd, block_size, buffer_size))
+        super().__init__(disp, FileBuffer(disp._loop, self._fd, block_size, buffer_size))
 
     def close(self):
         """ Closes stream and associated resources.

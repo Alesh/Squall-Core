@@ -62,8 +62,8 @@ class TCPServer(object):
                                 continue
                             logging.error("Exception while listening: %s", exc)
 
-            handle = disp._event_loop.setup_io(_acceptor, socket_.fileno(), disp.READ)
-            self._close = lambda *args: disp._event_loop.cancel_io(handle)
+            handle = disp._loop.setup_io(_acceptor, socket_.fileno(), disp.READ)
+            self._close = lambda *args: disp._loop.cancel_io(handle)
 
     def _accept(self, socket_, address):
         stream = self._stream_factory(self._disp, socket_)

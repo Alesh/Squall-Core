@@ -20,9 +20,8 @@ class CannotSetupDispatcher(RuntimeError):
 class AsyncLet(object):
     """ Future-like wrapper that help to manage coroutines into a Squall environment.
     """
-    _stack = deque()
-
     def __init__(self, corofunc, disp, *args, **kwargs):
+        self._disp = disp
         self._running = True
         self._cancelled = False
         self._done_callbacks = list()
@@ -60,16 +59,11 @@ class AsyncLet(object):
         """ Returns True if wrapped coroutine has finished with result. """
         return not self._cancelled and not self._running
 
-    @classmethod
-    def current(cls):
-        """ Return current running `AsyncLet` instance. """
-        return cls._stack[0] if cls._stack else None
-
     def switch(self, value):
         """ Sends some value into wrapped coroutine to switches its running back.
         """
         try:
-            AsyncLet._stack.appendleft(self)
+            self._disp._stack.appendleft(self)
             if isinstance(value, BaseException):
                 self._coro.throw(value)
             else:
@@ -86,7 +80,7 @@ class AsyncLet(object):
                     logging.exception("Uncaught exception when switch(%s, %s)", self._coro, value)
             self._invoke_callbacks()
         finally:
-            AsyncLet._stack.popleft()
+            self._disp._stack.popleft()
 
     def result(self, timeout=None):
         """ If wrapped coroutine has finished succeeded
@@ -127,9 +121,10 @@ class AsyncLet(object):
 class Awaitable(object):
     """ Specialized base class for awaitable objects to using into a Squall environment.
     """
-    def __init__(self, *args):
+    def __init__(self, disp, *args):
         self._args = args
-        self._callback = AsyncLet.current().switch
+        self._loop = disp._loop
+        self._callback = disp.current.switch
 
     def __await__(self):
         """ Makes it awaitable. """
@@ -178,11 +173,8 @@ class Dispatcher(object):
     """
 
     def __init__(self):
+        self._stack = deque()
         self._loop = EventLoop()
-
-    @property
-    def _event_loop(self):
-        return self._loop
 
     @property
     def READ(self):
@@ -193,6 +185,11 @@ class Dispatcher(object):
     def WRITE(self):
         """ Event code I/O ready to write. """
         return self._loop.WRITE
+
+    @property
+    def current(self):
+        """ Return current running `AsyncLet` instance. """
+        return self._stack[0] if self._stack else None
 
     def submit(self, corofunc, *args, **kwargs):
         """ Creates the wrapped coroutine and submits to execute. """
@@ -217,7 +214,7 @@ class Dispatcher(object):
         seconds = seconds or 0
         seconds = seconds if seconds > 0 else 0
         assert isinstance(seconds, (int, float))
-        return _SleepAwaitable(self._loop, seconds)
+        return _SleepAwaitable(self, seconds)
 
     def ready(self, fd, events, *, timeout=None):
         """ Returns the awaitable that switches current coroutine back
@@ -232,7 +229,7 @@ class Dispatcher(object):
         assert isinstance(timeout, (int, float))
         assert isinstance(events, int) and (events & (self.READ | self.WRITE) == events)
         assert isinstance(fd, int) and fd >= 0
-        return _ReadyAwaitable(self._loop, fd, events, timeout)
+        return _ReadyAwaitable(self, fd, events, timeout)
 
     def signal(self, signum):
         """ Returns the awaitable that switches current coroutine back
@@ -243,7 +240,7 @@ class Dispatcher(object):
         """
         signum = signum or 0
         assert isinstance(signum, int) and signum > 0
-        return _SignalAwaitable(self._loop, signum)
+        return _SignalAwaitable(self, signum)
 
     def complete(self, *futures, timeout=None):
         """ Returns the awaitable that switches current coroutine back
@@ -258,16 +255,12 @@ class Dispatcher(object):
         assert isinstance(timeout, (int, float))
         assert len(futures) > 0
         assert all(isinstance(item, (AsyncLet, Future)) for item in futures)
-        return _CompleteAwaitable(self._loop, futures, timeout)
+        return _CompleteAwaitable(self, futures, timeout)
 
 
 class _SleepAwaitable(Awaitable):
     """ Awaitable that returns `Dispatcher.sleep`
     """
-
-    def __init__(self, loop, seconds):
-        self._loop = loop
-        super().__init__(seconds)
 
     def _setup(self, seconds):
         timeout_handle = self._loop.setup_timer(self._callback, seconds)
@@ -289,10 +282,6 @@ class _SleepAwaitable(Awaitable):
 class _ReadyAwaitable(Awaitable):
     """ Awaitable that returns `Dispatcher.sleep`
     """
-
-    def __init__(self, loop, fd, events, timeout):
-        self._loop = loop
-        super().__init__(fd, events, timeout)
 
     def _setup(self, fd, events, timeout):
         timeout_handle = None
@@ -318,10 +307,6 @@ class _SignalAwaitable(Awaitable):
     """ Awaitable that returns `Dispatcher.signal`
     """
 
-    def __init__(self, loop, signum):
-        self._loop = loop
-        super().__init__(signum)
-
     def _setup(self, signum):
         signal_handle = self._loop.setup_signal(self._callback, signum)
         if signal_handle is None:
@@ -337,10 +322,9 @@ class _CompleteAwaitable(Awaitable):
     """ Awaitable that returns `Dispatcher.complete`
     """
 
-    def __init__(self, loop, futures, timeout):
-        self._loop = loop
+    def __init__(self, disp, futures, timeout):
         self._futures = futures
-        super().__init__(timeout)
+        super().__init__(disp, timeout)
 
     def _one_complete(self, _):
         if all(future.done() or future.cancelled() for future in self._futures):
