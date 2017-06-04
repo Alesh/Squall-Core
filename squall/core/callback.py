@@ -1,5 +1,12 @@
-import asyncio
+""" Squall callback classes
+"""
 import logging
+import asyncio
+
+
+class CannotSetupWatching(RuntimeError):
+    def __init__(self, msg=None):
+        super().__init__(msg or "Set up an event watching")
 
 
 class EventLoop(object):
@@ -10,6 +17,8 @@ class EventLoop(object):
     TIMEOUT = 0x00000004
     SIGNAL  = 0x00000008
     ERROR   = 0x00000010
+    CLEANUP = 0x00000020
+    BUFFER  = 0x00000040
 
     def __init__(self):
         self._fds = dict()
@@ -52,7 +61,7 @@ class EventLoop(object):
                 self._loop.add_writer(fd, callback, self.WRITE)
             self._fds[fd] = [callback, events]
             return fd
-        return None
+        raise CannotSetupWatching()
 
     def update_io(self, handle, events):
         """ Updates call settings for callback which was setup with `EventLoop.setup_io`.
@@ -92,7 +101,10 @@ class EventLoop(object):
         """
         deadline = self._loop.time() + seconds
         exc = TimeoutError("Timed out")
-        return self._loop.call_at(deadline, callback, exc)
+        handle = self._loop.call_at(deadline, callback, exc)
+        if handle is not None:
+            return handle
+        raise CannotSetupWatching()
 
     def cancel_timer(self, handle):
         """ Cancels callback which was setup with `EventLoop.setup_timer`.

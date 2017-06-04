@@ -1,4 +1,6 @@
 # Squall #
 
-The Squall is template library which provides 
-the event-driven and async network primitives.
+The Squall also has set of python modules what implements
+the cooperative multitasking based on event-driven switching
+**async/await** coroutines.
+

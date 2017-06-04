@@ -3,18 +3,18 @@
 import logging
 from collections import deque
 from concurrent.futures import CancelledError, Future
-from squall.core_callback import EventLoop
+
+try:
+    from squall.core_callback import EventLoop, CannotSetupWatching
+except ImportError:
+    # uses fallback EventLoop
+    from squall.core.callback import EventLoop, CannotSetupWatching
 
 
 class PartialFuture(NotImplementedError):
     def __init__(self):
         super().__init__("This is partial future-like implementation, "
                          "Use method `Dispatcher.complete` for take result")
-
-
-class CannotSetupDispatcher(RuntimeError):
-    def __init__(self, msg=None):
-        super().__init__(msg or "Set up a dispatcher to event watching has fail")
 
 
 class AsyncLet(object):
@@ -171,20 +171,12 @@ class Awaitable(object):
 class Dispatcher(object):
     """ Coroutine switcher/dispatcher
     """
+    READ = EventLoop.READ
+    WRITE = EventLoop.WRITE
 
     def __init__(self):
         self._stack = deque()
         self._loop = EventLoop()
-
-    @property
-    def READ(self):
-        """ Event code I/O ready to read. """
-        return self._loop.READ
-
-    @property
-    def WRITE(self):
-        """ Event code I/O ready to write. """
-        return self._loop.WRITE
 
     @property
     def current(self):
@@ -263,10 +255,11 @@ class _SleepAwaitable(Awaitable):
     """
 
     def _setup(self, seconds):
-        timeout_handle = self._loop.setup_timer(self._callback, seconds)
-        if timeout_handle is None:
-            return CannotSetupDispatcher(),
-        return None, timeout_handle
+        try:
+            timeout_handle = self._loop.setup_timer(self._callback, seconds)
+            return None, timeout_handle
+        except CannotSetupWatching as exc:
+            return exc,
 
     def _cancel(self, timeout_handle=None):
         if timeout_handle is not None:
@@ -284,17 +277,16 @@ class _ReadyAwaitable(Awaitable):
     """
 
     def _setup(self, fd, events, timeout):
-        timeout_handle = None
-        if timeout < 0:
-            return TimeoutError("I/O timeout"),
-        elif timeout > 0:
-            timeout_handle = self._loop.setup_timer(self._callback, timeout)
-            if timeout_handle is None:
-                return CannotSetupDispatcher(),
-        ready_handle = self._loop.setup_io(self._callback, fd, events)
-        if ready_handle is None:
-            return CannotSetupDispatcher(), None, timeout_handle
-        return None, ready_handle, timeout_handle
+        ready_handle = timeout_handle = None
+        try:
+            if timeout < 0:
+                return TimeoutError("I/O timeout"),
+            elif timeout > 0:
+                timeout_handle = self._loop.setup_timer(self._callback, timeout)
+            ready_handle = self._loop.setup_io(self._callback, fd, events)
+            return None, ready_handle, timeout_handle
+        except CannotSetupWatching as exc:
+            return exc, ready_handle, timeout_handle
 
     def _cancel(self, ready_handle=None, timeout_handle=None):
         if ready_handle is not None:
@@ -308,10 +300,11 @@ class _SignalAwaitable(Awaitable):
     """
 
     def _setup(self, signum):
-        signal_handle = self._loop.setup_signal(self._callback, signum)
-        if signal_handle is None:
-            return CannotSetupDispatcher(),
-        return None, signal_handle
+        try:
+            signal_handle = self._loop.setup_signal(self._callback, signum)
+            return None, signal_handle
+        except CannotSetupWatching as exc:
+            return exc,
 
     def _cancel(self, signal_handle=None):
         if signal_handle is not None:
@@ -332,15 +325,16 @@ class _CompleteAwaitable(Awaitable):
 
     def _setup(self, timeout):
         timeout_handle = None
-        if timeout < 0:
-            return TimeoutError("I/O timeout"),
-        elif timeout > 0:
-            timeout_handle = self._loop.setup_timer(self._callback, timeout)
-            if timeout_handle is None:
-                return CannotSetupDispatcher(),
-        for future in self._futures:
-            future.add_done_callback(self._one_complete)
-        return None, timeout_handle
+        try:
+            if timeout < 0:
+                return TimeoutError("I/O timeout"),
+            elif timeout > 0:
+                timeout_handle = self._loop.setup_timer(self._callback, timeout)
+            for future in self._futures:
+                future.add_done_callback(self._one_complete)
+            return None, timeout_handle
+        except CannotSetupWatching as exc:
+            return exc, timeout_handle
 
     def _cancel(self, timeout_handle=None):
         if timeout_handle is not None:
