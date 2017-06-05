@@ -2,8 +2,12 @@
 """
 import os
 from socket import SHUT_RDWR
-from squall.core.switching import Awaitable, CannotSetupDispatcher
-from squall.core_callback import SocketBuffer, FileBuffer
+from squall.core.switching import Awaitable, CannotSetupWatching
+
+try:
+    from squall.core_callback import SocketBuffer, FileBuffer
+except ImportError:
+    from squall.core.callback import SocketBuffer, FileBuffer
 
 
 class IOStream(object):
@@ -111,7 +115,7 @@ class IOStream(object):
     def close(self):
         """ Closes stream and associated resources.
         """
-        self._buff.cleanup()
+        self._buff.release()
         self._is_closed = True
 
 
@@ -125,23 +129,20 @@ class _ReadUntilAwaitable(Awaitable):
 
     def _setup(self, delimiter, max_bytes, timeout):
         timeout_handle = None
-        if timeout < 0:
-            return TimeoutError("I/O timeout"),
-        elif timeout > 0:
-            timeout_handle = self._loop.setup_timer(self._callback, timeout)
-            if timeout_handle is None:
-                return CannotSetupDispatcher(),
-        early, result = self._buff.setup_read_until(self._callback, delimiter, max_bytes)
-        if early:
-            if result is not None:
-                return result, timeout_handle
-            return CannotSetupDispatcher(), timeout_handle
-        return None, timeout_handle
+        try:
+            if timeout < 0:
+                raise TimeoutError("I/O timeout")
+            elif timeout > 0:
+                timeout_handle = self._loop.setup_timer(self._callback, timeout)
+            result = self._buff.setup_read_until(self._callback, delimiter, max_bytes)
+            return result, self._buff.cancel_read, timeout_handle
+        except Exception as exc:
+            return exc, self._buff.cancel_read, timeout_handle
 
-    def _cancel(self, timeout_handle=None):
+    def _cancel(self, cancel_read, timeout_handle=None):
         if timeout_handle is not None:
             self._loop.cancel_timer(timeout_handle)
-        self._buff.cancel(self._buff.READ)
+        cancel_read()
 
 
 class _ReadExactlyAwaitable(Awaitable):
@@ -154,23 +155,20 @@ class _ReadExactlyAwaitable(Awaitable):
 
     def _setup(self, num_bytes, timeout):
         timeout_handle = None
-        if timeout < 0:
-            return TimeoutError("I/O timeout"),
-        elif timeout > 0:
-            timeout_handle = self._loop.setup_timer(self._callback, timeout)
-            if timeout_handle is None:
-                return CannotSetupDispatcher(),
-        early, result = self._buff.setup_read_exactly(self._callback, num_bytes)
-        if early:
-            if result is not None:
-                return result, timeout_handle
-            return CannotSetupDispatcher(), timeout_handle
-        return None, timeout_handle
+        try:
+            if timeout < 0:
+                raise TimeoutError("I/O timeout")
+            elif timeout > 0:
+                timeout_handle = self._loop.setup_timer(self._callback, timeout)
+            result = self._buff.setup_read_exactly(self._callback, num_bytes)
+            return result, self._buff.cancel_read, timeout_handle
+        except Exception as exc:
+            return exc, self._buff.cancel_read, timeout_handle
 
-    def _cancel(self, timeout_handle=None):
+    def _cancel(self, cancel_read, timeout_handle=None):
         if timeout_handle is not None:
             self._loop.cancel_timer(timeout_handle)
-        self._buff.cancel(self._buff.READ)
+        cancel_read()
 
 
 class _FlushAwaitable(Awaitable):
@@ -183,23 +181,20 @@ class _FlushAwaitable(Awaitable):
 
     def _setup(self, timeout):
         timeout_handle = None
-        if timeout < 0:
-            return TimeoutError("I/O timeout"),
-        elif timeout > 0:
-            timeout_handle = self._loop.setup_timer(self._callback, timeout)
-            if timeout_handle is None:
-                return CannotSetupDispatcher(),
-        early, result = self._buff.setup_flush(self._callback)
-        if early:
-            if result:
-                return result, timeout_handle
-            return CannotSetupDispatcher(), timeout_handle
-        return None, timeout_handle
+        try:
+            if timeout < 0:
+                raise TimeoutError("I/O timeout")
+            elif timeout > 0:
+                timeout_handle = self._loop.setup_timer(self._callback, timeout)
+            result = self._buff.setup_flush(self._callback)
+            return result, self._buff.cancel_flush, timeout_handle
+        except Exception as exc:
+            return exc, self._buff.cancel_flush, timeout_handle
 
-    def _cancel(self, timeout_handle=None):
+    def _cancel(self, cancel_flush, timeout_handle=None):
         if timeout_handle is not None:
             self._loop.cancel_timer(timeout_handle)
-        self._buff.cancel(self._buff.WRITE)
+        cancel_flush()
 
 
 class SocketStream(IOStream):

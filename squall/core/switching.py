@@ -5,9 +5,11 @@ from collections import deque
 from concurrent.futures import CancelledError, Future
 
 try:
+    from squall.core_callback import READ, WRITE
     from squall.core_callback import EventLoop, CannotSetupWatching
 except ImportError:
     # uses fallback EventLoop
+    from squall.core.callback import READ, WRITE
     from squall.core.callback import EventLoop, CannotSetupWatching
 
 
@@ -171,8 +173,8 @@ class Awaitable(object):
 class Dispatcher(object):
     """ Coroutine switcher/dispatcher
     """
-    READ = EventLoop.READ
-    WRITE = EventLoop.WRITE
+    READ = READ
+    WRITE = WRITE
 
     def __init__(self):
         self._stack = deque()
@@ -219,7 +221,7 @@ class Dispatcher(object):
         timeout = timeout or 0
         timeout = timeout if timeout >= 0 else -1
         assert isinstance(timeout, (int, float))
-        assert isinstance(events, int) and (events & (self.READ | self.WRITE) == events)
+        assert isinstance(events, int) and (events & (READ | WRITE) == events)
         assert isinstance(fd, int) and fd >= 0
         return _ReadyAwaitable(self, fd, events, timeout)
 

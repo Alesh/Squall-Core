@@ -51,10 +51,10 @@ def test_IOStream(callog):
                 callog.append(('R', 8, type(exc)))
                 break
 
-        callog.append(('R', 8, len(data)))
+        callog.append(('R', 9, len(data)))
 
         data = stream.read(stream.buffer_size)
-        callog.append(('R', 9, len(data)))
+        callog.append(('R', 10, len(data)))
 
         read_stm.close()
         callog.append(('R', 'END'))
@@ -70,6 +70,8 @@ def test_IOStream(callog):
         sent = stream.write(b'\r\n0123456789')
         result = await stream.flush()
         callog.append(('W', 2, sent, result))
+
+        await disp.sleep(0.5)
 
         await disp.sleep(0.05)
         sent = stream.write(b'ABCDEFXXX')
@@ -91,7 +93,7 @@ def test_IOStream(callog):
         disp.stop()
 
     disp = Dispatcher()
-    tempname = os.path.join(tempfile.mkdtemp(), 'A')
+    tempname = os.path.join(tempfile.mkdtemp(), 'A2')
     os.mkfifo(tempname)
     read_stm = FileStream(disp, tempname, os.O_RDONLY)
     write_stm = FileStream(disp, tempname, os.O_WRONLY,
@@ -128,8 +130,8 @@ def test_IOStream(callog):
         ('W', 5, True),
         ('W', 'END'),
         ('R', 8, EOFError),
-        ('R', 8, 80896),
-        ('R', 9, 924),
+        ('R', 9, 80896),
+        ('R', 10, 924),
         ('R', 'END'),
     'STOP']
 
