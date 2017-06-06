@@ -21,7 +21,7 @@ def test_IOStream(callog):
         data = await stream.read_until(b'\n')
         callog.append(('R', 1, data))
 
-        data = await stream.read_until(b'\r\n')
+        data = await stream.read_until(b'\r\n\r\n')
         callog.append(('R', 2, data))
 
         try:
@@ -67,22 +67,27 @@ def test_IOStream(callog):
         callog.append(('W', 1, sent, result))
 
         await disp.sleep(0.05)
-        sent = stream.write(b'\r\n0123456789')
+        sent = stream.write(b'\r\n')
         result = await stream.flush()
         callog.append(('W', 2, sent, result))
+
+        await disp.sleep(0.05)
+        sent = stream.write(b'\r\n0123456789')
+        result = await stream.flush()
+        callog.append(('W', 3, sent, result))
 
         await disp.sleep(0.5)
 
         await disp.sleep(0.05)
         sent = stream.write(b'ABCDEFXXX')
         result = await stream.flush()
-        callog.append(('W', 3, sent, result))
+        callog.append(('W', 4, sent, result))
 
         await disp.sleep(0.1)
         sent = stream.write(b'A' * (96 * 1024))
-        callog.append(('W', 4, sent, (96 * 1024)))
+        callog.append(('W', 5, sent, (96 * 1024)))
         result = await stream.flush()
-        callog.append(('W', 5, result))
+        callog.append(('W', 6, result))
 
         write_stm.close()
         callog.append(('W', 'END'))
@@ -118,16 +123,17 @@ def test_IOStream(callog):
         ('W', 0),
         ('W', 1, 7, True),
         ('R', 1, b'AAA\n'),
-        ('W', 2, 12, True),
-        ('R', 2, b'BBB\r\n'),
+        ('W', 2, 2, True),
+        ('W', 3, 12, True),
+        ('R', 2, b'BBB\r\n\r\n'),
         ('R', 3, LookupError),
         ('R', 4, b'01234567', 2),
-        ('W', 3, 9, True),
+        ('W', 4, 9, True),
         ('R', 5, b'89ABCDEF'),
         ('R', 6, b'XXX'),
-        ('W', 4, 81920, 98304),
+        ('W', 5, 81920, 98304),
         ('R', 7, 100),
-        ('W', 5, True),
+        ('W', 6, True),
         ('W', 'END'),
         ('R', 8, EOFError),
         ('R', 9, 80896),

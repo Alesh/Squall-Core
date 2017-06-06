@@ -254,13 +254,13 @@ class EventBuffer(object):
         self._fd = -1
 
     def _set_mode(self, value):
-        if self.active:
+        if self.active and value != self.mode:
             if self._handle is None:
                 self._handle = self._loop.setup_io(self._event_handler, self._fd, value)
                 if self._handle is not None:
                     self._mode = value
-            elif value != self._mode:
-                if value:
+            else:
+                if value > 0:
                     if self._loop.update_io(self._handle, value):
                         self._mode = value
                 else:

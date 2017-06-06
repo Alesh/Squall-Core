@@ -126,7 +126,7 @@ class IncomingBuffer(object):
                     self._buff += data
                 else:
                     revents = BUFFER | ERROR
-            if revents & ERROR or self.size <= self._max_size:
+            if revents & ERROR or self.size >= self._max_size:
                 self._pause()
             if self._on_event:
                 on_event = self._on_event

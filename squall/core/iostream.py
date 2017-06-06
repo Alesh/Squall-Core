@@ -2,12 +2,12 @@
 """
 import os
 from socket import SHUT_RDWR
-from squall.core.switching import Awaitable, CannotSetupWatching
+from .switching import Awaitable
 
 try:
     from squall.core_callback import SocketBuffer, FileBuffer
 except ImportError:
-    from squall.core.callback import SocketBuffer, FileBuffer
+    from .callback import SocketBuffer, FileBuffer
 
 
 class IOStream(object):

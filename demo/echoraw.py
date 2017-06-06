@@ -7,32 +7,7 @@ import socket
 import logging
 from signal import SIGINT
 from squall.core import Dispatcher
-from squall.core.utils import Addr, timeout_gen
-
-
-def bind_sockets(port, address=None, *, backlog=127, reuse_port=False):
-    """ Binds sockets """
-    sockets = list()
-    info = socket.getaddrinfo(address, port, socket.AF_INET,
-                              socket.SOCK_STREAM, 0, socket.AI_PASSIVE)
-    for *args, _, sockaddr in set(info):
-        try:
-            socket_ = socket.socket(*args)
-        except socket.error as exc:
-            if getattr(0, 'errno', exc.args[0] if exc.args else 0) == errno.EAFNOSUPPORT:
-                continue
-            raise
-        if reuse_port:
-            if not hasattr(socket, "SO_REUSEPORT"):
-                raise ValueError("the platform doesn't support SO_REUSEPORT")
-            socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        if os.name != 'nt':
-            socket_.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        socket_.setblocking(0)
-        socket_.bind(sockaddr)
-        socket_.listen(backlog)
-        sockets.append(socket_)
-    return sockets
+from squall.core.utils import Addr, timeout_gen, bind_sockets
 
 
 async def echo_handler(disp, connection_socket, addr):

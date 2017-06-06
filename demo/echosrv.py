@@ -32,7 +32,7 @@ class EchoServer(TCPServer):
         try:
             while stream.active:
                 timeout = timeout_gen(self._timeout)
-                data = await stream.read_until(b'\r\n\r\n', timeout=next(timeout))
+                data = await stream.read_until(b'\r\n', timeout=next(timeout))
                 if data:
                     await disp.sleep(0.25)  # Lazy response ))
                     stream.write(data)

@@ -9,8 +9,8 @@ try:
     from squall.core_callback import EventLoop, CannotSetupWatching
 except ImportError:
     # uses fallback EventLoop
-    from squall.core.callback import READ, WRITE
-    from squall.core.callback import EventLoop, CannotSetupWatching
+    from .callback import READ, WRITE
+    from .callback import EventLoop, CannotSetupWatching
 
 
 class PartialFuture(NotImplementedError):
