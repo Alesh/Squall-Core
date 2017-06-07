@@ -84,6 +84,7 @@ class OutcomingBuffer(object):
     def write(self, data):
         """ Writes data to the outcoming buffer. Returns number of written bytes.
         """
+        assert isinstance(data, bytes)
         number = self._max_size - self.size
         if len(data) < number:
             number = len(data)
@@ -164,6 +165,7 @@ class IncomingBuffer(object):
 
     def setup(self, on_event, delimiter, max_size):
         """ Setup buffer task. """
+        assert delimiter is None or isinstance(delimiter, bytes)
         self.cancel()  # Cancel previos buffer task
         max_size = max_size if max_size < self._max_size else max_size
         #  setup new buffer task

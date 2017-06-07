@@ -7,11 +7,11 @@ if sys.version_info[:2] < (3, 5):
 
 
 setup(**{
-    'name': 'Squall',
-    'version': '0.1.dev170604',
+    'name': 'Squall-Core',
+    'version': '0.1.dev170608',
     'author': 'Alexey Poryadin',
     'author_email': 'alexey.poryadin@gmail.com',
-    'description': "The Squall this is set of modules which implements"
+    'description': "The Squall is set of modules what implements"
                    "the cooperative multitasking based on event-driven"
                    "switching async/await coroutines.",
     'namespace_packages': ['squall'],

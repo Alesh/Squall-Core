@@ -59,11 +59,13 @@ class AsyncLet(object):
 
     def done(self):
         """ Returns True if wrapped coroutine has finished with result. """
-        return not self._cancelled and not self._running
+        return self._cancelled or not self._running
 
     def switch(self, value):
         """ Sends some value into wrapped coroutine to switches its running back.
         """
+        if self.done():
+            return
         try:
             self._disp._stack.appendleft(self)
             if isinstance(value, BaseException):
@@ -325,16 +327,25 @@ class _CompleteAwaitable(Awaitable):
         if all(future.done() or future.cancelled() for future in self._futures):
             self._callback(tuple(future for future in self._futures))
 
+    def _on_timeout(self, _):
+        for future in self._futures:
+            future.cancel()
+        self._callback(tuple(future for future in self._futures))
+
     def _setup(self, timeout):
         timeout_handle = None
         try:
             if timeout < 0:
                 return TimeoutError("I/O timeout"),
             elif timeout > 0:
-                timeout_handle = self._loop.setup_timer(self._callback, timeout)
+                timeout_handle = self._loop.setup_timer(self._on_timeout, timeout)
             for future in self._futures:
-                future.add_done_callback(self._one_complete)
-            return None, timeout_handle
+                if not future.done():
+                    future.add_done_callback(self._one_complete)
+            result = None
+            if all(future.done() or future.cancelled() for future in self._futures):
+                result = tuple(future for future in self._futures)
+            return result, timeout_handle
         except CannotSetupWatching as exc:
             return exc, timeout_handle
 
